@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'impact_screen.dart';
 
 /// ---------- Theme colors ----------
 class AppColors {
@@ -31,11 +32,13 @@ class _HomeShellState extends State<HomeShell> {
       body: SafeArea(
         child: _index == 0
             ? const HomePage()
-            : Center(
-                child: Text(_tabs[_index],
-                    style: const TextStyle(
-                        color: AppColors.textSecondary, fontSize: 18)),
-              ),
+            : _index == 2
+                ? const ImpactScreen()
+                : Center(
+                    child: Text(_tabs[_index],
+                        style: const TextStyle(
+                            color: AppColors.textSecondary, fontSize: 18)),
+                  ),
       ),
       bottomNavigationBar: _BottomNav(
         tabs: _tabs,
@@ -115,7 +118,8 @@ class HomePage extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
-        const _Header(name: 'Rashid', subtitle: 'Dubai · Level 3: Eco-Guardian'),
+        const _Header(
+            name: 'Rashid', subtitle: 'Dubai · Level 3: Eco-Guardian'),
         const SizedBox(height: 14),
         const _PointsCard(
           points: 1585,
@@ -207,8 +211,8 @@ class _Header extends StatelessWidget {
           ),
           child: IconButton(
             padding: EdgeInsets.zero,
-            icon: const Icon(Icons.notifications,
-                color: Colors.white, size: 20),
+            icon:
+                const Icon(Icons.notifications, color: Colors.white, size: 20),
             onPressed: () {},
           ),
         ),
@@ -231,8 +235,9 @@ class _PointsCard extends StatelessWidget {
     required this.progress,
   });
 
-  String _fmt(int n) => n.toString().replaceAllMapped(
-      RegExp(r'(\d)(?=(\d{3})+$)'), (m) => '${m[1]},');
+  String _fmt(int n) => n
+      .toString()
+      .replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+$)'), (m) => '${m[1]},');
 
   @override
   Widget build(BuildContext context) {
@@ -280,8 +285,7 @@ class _PointsCard extends StatelessWidget {
               value: progress,
               minHeight: 6,
               backgroundColor: AppColors.progressTrack,
-              valueColor:
-                  const AlwaysStoppedAnimation(AppColors.progressFill),
+              valueColor: const AlwaysStoppedAnimation(AppColors.progressFill),
             ),
           ),
         ],
