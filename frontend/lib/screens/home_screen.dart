@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'record_activity_screen.dart';
 
 /// ---------- Theme colors ----------
 class AppColors {
@@ -127,7 +128,15 @@ class HomePage extends StatelessWidget {
           progress: 0.72,
         ),
         const SizedBox(height: 10),
-        _RecordButton(onPressed: () {}),
+        _RecordButton(
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const RecordActivityScreen(),
+              ),
+            );
+          },
+        ),
         const SizedBox(height: 10),
         _ListCard(
           title: '5 submissions need attention',
