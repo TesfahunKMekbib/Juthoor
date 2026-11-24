@@ -11,24 +11,26 @@ void usePhoneSurface(WidgetTester tester) {
 }
 
 /// Pumps [child] inside a MaterialApp with the l10n delegates and [locale].
+/// [wrapApp] wraps the MaterialApp itself (e.g. providers visible to every
+/// route).
 Future<void> pumpApp(
   WidgetTester tester,
   Widget child, {
   Locale locale = const Locale('en'),
+  Widget Function(Widget app)? wrapApp,
 }) async {
   usePhoneSurface(tester);
-  await tester.pumpWidget(
-    MaterialApp(
-      locale: locale,
-      supportedLocales: AppLocalizations.supportedLocales,
-      localizationsDelegates: const [
-        AppLocalizations.delegate,
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      home: child,
-    ),
+  final app = MaterialApp(
+    locale: locale,
+    supportedLocales: AppLocalizations.supportedLocales,
+    localizationsDelegates: const [
+      AppLocalizations.delegate,
+      GlobalMaterialLocalizations.delegate,
+      GlobalWidgetsLocalizations.delegate,
+      GlobalCupertinoLocalizations.delegate,
+    ],
+    home: child,
   );
+  await tester.pumpWidget(wrapApp == null ? app : wrapApp(app));
   await tester.pumpAndSettle();
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import 'my_activities_screen.dart';
 import 'record_activity_screen.dart';
 
 /// ---------- Theme colors ----------
@@ -40,11 +41,13 @@ class _HomeShellState extends State<HomeShell> {
       body: SafeArea(
         child: _index == 0
             ? const HomePage()
-            : Center(
-                child: Text(tabs[_index],
-                    style: const TextStyle(
-                        color: AppColors.textSecondary, fontSize: 18)),
-              ),
+            : _index == 1
+                ? const MyActivitiesScreen()
+                : Center(
+                    child: Text(tabs[_index],
+                        style: const TextStyle(
+                            color: AppColors.textSecondary, fontSize: 18)),
+                  ),
       ),
       bottomNavigationBar: _BottomNav(
         tabs: tabs,

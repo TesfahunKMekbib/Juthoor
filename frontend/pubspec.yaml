@@ -11,7 +11,12 @@ dependencies:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
+  geolocator: ^14.1.2
+  http: ^1.6.0
+  http_parser: ^4.1.2
+  image_picker: ^1.2.4
   intl: ^0.20.3
+  provider: ^6.1.5+1
 
 dev_dependencies:
   flutter_test:
