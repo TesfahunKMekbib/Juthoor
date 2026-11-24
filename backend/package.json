@@ -16,8 +16,9 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"**/*.ts\"",
     "format:check": "prettier --check \"**/*.ts\"",
-    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --passWithNoTests",
-    "test:cov": "node --experimental-vm-modules node_modules/jest/bin/jest.js --passWithNoTests --coverage",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --passWithNoTests --testPathIgnorePatterns \"/node_modules/\" \"/dist/\" \"\\.e2e-spec\\.ts$\"",
+    "test:cov": "node --experimental-vm-modules node_modules/jest/bin/jest.js --passWithNoTests --coverage --testPathIgnorePatterns \"/node_modules/\" \"/dist/\" \"\\.e2e-spec\\.ts$\"",
+    "test:e2e": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.e2e.config.cjs --runInBand",
     "verify": "npm run typecheck && npm run lint && npm run test:cov"
   },
   "dependencies": {

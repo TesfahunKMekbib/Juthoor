@@ -17,6 +17,12 @@ export default tseslint.config(
     },
   },
   {
+    // CommonJS config files (ADR-0003: `.cjs` must stay CommonJS) may use require().
+    files: ['**/*.cjs'],
+    languageOptions: { sourceType: 'commonjs' },
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
+  },
+  {
     // ADR-0010: nothing outside src/dev may import the development participant.
     files: ['**/*.ts'],
     ignores: ['src/dev/**', 'src/app.module.ts'],
