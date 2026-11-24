@@ -28,9 +28,16 @@ describe('production guard (NFR-009, ADR-0012, AC 32)', () => {
     expect(() => assertAiProviderAllowed({ NODE_ENV: 'production', AI_PROVIDER: 'mock' })).not.toThrow();
     expect(() => assertAiProviderAllowed({ NODE_ENV: 'production' })).not.toThrow();
   });
-  it('allows a real provider outside production', () => {
+  it('allows a real provider only in development or test', () => {
     expect(() => assertAiProviderAllowed({ NODE_ENV: 'development', AI_PROVIDER: 'gemini' })).not.toThrow();
-    expect(() => assertAiProviderAllowed({ AI_PROVIDER: 'gemini' })).not.toThrow();
+    expect(() => assertAiProviderAllowed({ NODE_ENV: 'test', AI_PROVIDER: 'gemini' })).not.toThrow();
+  });
+  it('fails for a real provider when NODE_ENV is unset or another value (S1)', () => {
+    expect(() => assertAiProviderAllowed({ AI_PROVIDER: 'gemini' })).toThrow(AiConfigError);
+    expect(() => assertAiProviderAllowed({ NODE_ENV: 'staging', AI_PROVIDER: 'gemini' })).toThrow(AiConfigError);
+  });
+  it('allows mock with NODE_ENV unset', () => {
+    expect(() => assertAiProviderAllowed({})).not.toThrow();
   });
 });
 

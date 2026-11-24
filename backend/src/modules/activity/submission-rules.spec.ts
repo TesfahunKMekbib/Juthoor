@@ -42,6 +42,12 @@ describe('checkSubmission', () => {
   });
 
   describe('description (FR-018)', () => {
+    it('truncates an echoed unknown photo kind to 20 characters (S1)', () => {
+      const r = checkSubmission(type, valid({ photoKinds: ['x'.repeat(500)] }), [photo], NOW);
+      const e = r.errors.find((x) => x.code === 'photos.kindUnknown');
+      expect(e?.params).toEqual({ kind: 'x'.repeat(20) });
+      expect(e?.message.length).toBeLessThan(60);
+    });
     it('rejects missing description', () =>
       expect(codes(valid({ description: '  ' }))).toEqual(['description:description.required']));
     it('rejects non-string description', () =>

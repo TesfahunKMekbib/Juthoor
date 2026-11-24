@@ -13,7 +13,7 @@ import {
   UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
-import { AnyFilesInterceptor } from '@nestjs/platform-express';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import { uploadLimits } from '../../common/config/app-config.js';
 import { CurrentParticipant, type ParticipantContext } from '../../common/identity/participant.js';
 import type { PhotoToStore } from '../integration/storage/photo-storage.js';
@@ -42,7 +42,10 @@ export class ActivitiesController {
 
   /** Submit an activity: multipart `data` JSON + `photos`; 201 when created, 200 on a replay (FR-015). */
   @Post()
-  @UseInterceptors(UploadErrorsInterceptor, AnyFilesInterceptor({ limits: uploadLimits(process.env) }))
+  @UseInterceptors(
+    UploadErrorsInterceptor,
+    FilesInterceptor(PHOTO_FIELD, uploadLimits(process.env).files, { limits: uploadLimits(process.env) }),
+  )
   async create(
     @CurrentParticipant() participant: ParticipantContext,
     @Headers('idempotency-key') idempotencyKey: string | undefined,

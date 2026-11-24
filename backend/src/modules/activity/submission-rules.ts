@@ -186,7 +186,7 @@ export function checkSubmission(
     add('photos', 'photos.tooMany', `Add no more than ${pr.maxPhotos} photos.`, { max: pr.maxPhotos });
   photoKinds.forEach((k, i) => {
     if (!(PHOTO_KINDS as readonly string[]).includes(k))
-      add(`photos[${i}]`, 'photos.kindUnknown', `Unknown photo kind "${k}".`, { kind: k });
+      add(`photos[${i}]`, 'photos.kindUnknown', `Unknown photo kind "${k.slice(0, 20)}".`, { kind: k.slice(0, 20) });
   });
   for (const needed of pr.neededKinds) {
     if (!photoKinds.includes(needed)) add('photos', 'photos.kindMissing', `Add a "${needed}" photo.`, { kind: needed });

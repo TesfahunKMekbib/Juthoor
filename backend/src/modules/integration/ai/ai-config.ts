@@ -29,13 +29,17 @@ function providerOf(env: Env): string {
 }
 
 /**
- * Production guard (ADR-0012 section 10, NFR-009, AC 32): a real provider may never run with
- * NODE_ENV=production. Call from main.ts before the app listens.
+ * Real-provider guard (ADR-0012 section 10, NFR-009, AC 32; owner decision "dev-only"): a provider other than
+ * mock runs only when NODE_ENV is exactly "development" or "test". Unset, staging and production fail.
+ * Call from main.ts before the app listens.
  */
 export function assertAiProviderAllowed(env: Env): void {
   const provider = providerOf(env);
-  if (env['NODE_ENV'] === 'production' && provider !== 'mock') {
-    throw new AiConfigError('AI_PROVIDER must be "mock" when NODE_ENV=production (privacy review required, ADR-0012)');
+  const devOnly = env['NODE_ENV'] === 'development' || env['NODE_ENV'] === 'test';
+  if (provider !== 'mock' && !devOnly) {
+    throw new AiConfigError(
+      'AI_PROVIDER must be "mock" unless NODE_ENV is "development" or "test" (privacy review required, ADR-0012)',
+    );
   }
 }
 

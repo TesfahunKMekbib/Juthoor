@@ -98,6 +98,19 @@ describe('UploadErrorsInterceptor', () => {
       errors: [{ field: 'photos', code: 'photos.tooMany' }],
     });
   });
+  it('maps a file in another field to 422 photos.unexpectedField (S1)', async () => {
+    await expect(run(new BadRequestException('Unexpected field'))).rejects.toMatchObject({
+      errors: [{ field: 'photos', code: 'photos.unexpectedField' }],
+    });
+  });
+  it.each(['Field value too long', 'Field name too long', 'Too many fields', 'Too many parts'])(
+    'maps multer "%s" to 422 request.malformed (S1)',
+    async (message) => {
+      await expect(run(new BadRequestException(message))).rejects.toMatchObject({
+        errors: [{ field: 'data', code: 'request.malformed' }],
+      });
+    },
+  );
   it('leaves other errors, such as the 413 size cap, untouched', async () => {
     const tooLarge = new HttpException('File too large', 413);
     await expect(run(tooLarge)).rejects.toBe(tooLarge);
