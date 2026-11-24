@@ -28,7 +28,7 @@ const data = (over: Record<string, unknown> = {}) =>
     activityTypeId: String(typeId),
     description: 'Planted',
     doneAt: '2020-01-01T00:00:00Z',
-    location: { emirate: 'Dubai', area: '' },
+    location: { source: 'manual', emirate: 'Dubai', area: '' },
     amount: { value: 2 },
     ...over,
   });
@@ -113,26 +113,43 @@ describe('ActivitiesService', () => {
       );
     });
 
-    it('rejects an invalid activity type id with 422', async () => {
+    it('rejects an invalid activity type id with 422 activityType.required', async () => {
       const { model, svc } = setup();
       model.findOne.mockReturnValue(chain(null));
-      await expect(svc.submit(userId, data({ activityTypeId: 'bad' }), [file], 'k')).rejects.toBeInstanceOf(
-        UnprocessableEntityException,
-      );
+      const p = svc.submit(userId, data({ activityTypeId: 'bad' }), [file], 'k');
+      await expect(p).rejects.toBeInstanceOf(UnprocessableEntityException);
+      await expect(p).rejects.toMatchObject({ errors: [{ field: 'activityTypeId', code: 'activityType.required' }] });
     });
 
     it('rejects an unpublished activity type with 422', async () => {
       const { model, types, svc } = setup();
       model.findOne.mockReturnValue(chain(null));
       types.findById.mockResolvedValue({ ...type, status: 'draft' });
-      await expect(svc.submit(userId, data(), [file], 'k')).rejects.toBeInstanceOf(UnprocessableEntityException);
+      const p = svc.submit(userId, data(), [file], 'k');
+      await expect(p).rejects.toBeInstanceOf(UnprocessableEntityException);
+      await expect(p).rejects.toMatchObject({ errors: [{ code: 'activityType.unavailable' }] });
+    });
+
+    it('creates no record and stores no photo for a device location until geo is wired (Q-E3)', async () => {
+      const { model, svc, photos } = setup();
+      model.findOne.mockReturnValue(chain(null));
+      const loc = { source: 'device', coordinates: { lat: 24.4, lng: 54.3 } };
+      await expect(svc.submit(userId, data({ location: loc }), [file], 'k')).rejects.toBeInstanceOf(
+        UnprocessableEntityException,
+      );
+      expect(model.create).not.toHaveBeenCalled();
+      expect(photos.files.size).toBe(0);
     });
 
     it('rejects rule violations with 422 field errors and stores nothing (FR-023)', async () => {
       const { model, svc, photos } = setup();
       model.findOne.mockReturnValue(chain(null));
       await expect(svc.submit(userId, data({ description: '' }), [file], 'k')).rejects.toMatchObject({
-        response: { statusCode: 422, errors: [{ field: 'description' }] },
+        response: {
+          statusCode: 422,
+          code: 'validation.failed',
+          errors: [{ field: 'description', code: 'description.required' }],
+        },
       });
       expect(photos.files.size).toBe(0);
     });
@@ -217,6 +234,10 @@ describe('ActivitiesService', () => {
       const id = new Types.ObjectId();
       await svc.decide(id, 'accepted', 'ok');
       expect(model.findOneAndUpdate.mock.calls[0][0]).toEqual({ _id: id, status: 'submitted' });
+      expect(model.findOneAndUpdate.mock.calls[0][1].$set).toEqual({
+        status: 'accepted',
+        resultReasonCode: 'ok',
+      });
     });
     it('finds waiting activities oldest first', async () => {
       const { model, svc } = setup();

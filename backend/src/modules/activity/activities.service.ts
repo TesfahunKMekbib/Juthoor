@@ -1,13 +1,8 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  NotFoundException,
-  UnprocessableEntityException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'node:crypto';
 import { isValidObjectId, Model, Types } from 'mongoose';
+import { ValidationFailedException } from '../../common/errors/validation-failed.exception.js';
 import { EventsService } from '../../common/events/events.service.js';
 import {
   PHOTO_STORAGE,
@@ -44,15 +39,26 @@ export class ActivitiesService {
     if (existing) return { created: false, activity: await this.toView(existing) };
 
     if (typeof input.activityTypeId !== 'string' || !isValidObjectId(input.activityTypeId)) {
-      throw this.validationError([{ field: 'activityTypeId', message: 'Please choose an activity type.' }]);
+      throw new ValidationFailedException([
+        { field: 'activityTypeId', code: 'activityType.required', message: 'Please choose an activity type.' },
+      ]);
     }
     const type = await this.types.findById(input.activityTypeId);
     if (type.status !== 'published') {
-      throw this.validationError([{ field: 'activityTypeId', message: 'This activity type is not available.' }]);
+      throw new ValidationFailedException([
+        { field: 'activityTypeId', code: 'activityType.unavailable', message: 'This activity type is not available.' },
+      ]);
     }
 
     const { errors, clean } = checkSubmission(type, input, files);
-    if (!clean) throw this.validationError(errors);
+    if (!clean) throw new ValidationFailedException(errors);
+    // Device location needs the geo provider (B4b/B5); until it is wired only the manual emirate works.
+    if (clean.location.source !== 'manual' || !clean.location.emirate) {
+      throw new ValidationFailedException([
+        { field: 'location.source', code: 'location.sourceInvalid', message: 'Choose an emirate manually.' },
+      ]);
+    }
+    const emirate = clean.location.emirate;
 
     // Store the photos, then the activity. If saving the activity fails, remove the photos again.
     const stored: StoredPhoto[] = [];
@@ -68,13 +74,13 @@ export class ActivitiesService {
         typeVersion: type.version,
         description: clean.description,
         doneAt: clean.doneAt,
-        location: clean.location,
+        location: { emirate, area: clean.location.area },
         answers: clean.answers,
         amount: { value: clean.amountValue, unit: type.amount.unit },
         photos: stored.map((p, i) => ({ ...p, kind: clean.photoKinds[i], uploadedAt: now })),
         status: 'submitted',
         submitKey,
-        statusHistory: [{ from: null, to: 'submitted', reason: '', at: now }],
+        statusHistory: [{ from: null, to: 'submitted', reasonCode: null, at: now }],
         submittedAt: now,
       });
       record = created.toObject() as ActivityRecord;
@@ -120,19 +126,23 @@ export class ActivitiesService {
           .findOne({ _id: new Types.ObjectId(id), userId: new Types.ObjectId(userId) })
           .lean<ActivityRecord>()
       : null;
-    if (!activity) throw new NotFoundException('Activity not found');
+    if (!activity) throw new NotFoundException({ code: 'activity.notFound', message: 'Activity not found' });
     return this.toView(activity);
   }
 
   /** Moves an activity to a final status, only if it is still waiting. Used by the checker. */
-  async decide(activityId: Types.ObjectId, to: Exclude<ActivityStatus, 'submitted'>, reason: string) {
+  async decide(
+    activityId: Types.ObjectId,
+    to: Exclude<ActivityStatus, 'draft' | 'submitted'>,
+    reasonCode: string | null,
+  ) {
     const now = new Date();
     return this.activities
       .findOneAndUpdate(
         { _id: activityId, status: 'submitted' },
         {
-          $set: { status: to, resultReason: reason },
-          $push: { statusHistory: { from: 'submitted', to, reason, at: now } },
+          $set: { status: to, resultReasonCode: reasonCode },
+          $push: { statusHistory: { from: 'submitted', to, reasonCode, at: now } },
         },
         { returnDocument: 'after' },
       )
@@ -148,22 +158,18 @@ export class ActivitiesService {
   }
 
   private parseData(raw: string | undefined): SubmissionInput {
-    if (!raw) throw new BadRequestException('Missing "data" field with the activity details (JSON).');
+    if (!raw)
+      throw new BadRequestException({
+        code: 'request.malformed',
+        message: 'Missing "data" field with the activity details (JSON).',
+      });
     try {
       const parsed: unknown = JSON.parse(raw);
       if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error();
       return parsed as SubmissionInput;
     } catch {
-      throw new BadRequestException('"data" must be a JSON object.');
+      throw new BadRequestException({ code: 'request.malformed', message: '"data" must be a JSON object.' });
     }
-  }
-
-  private validationError(errors: { field: string; message: string }[]) {
-    return new UnprocessableEntityException({
-      statusCode: 422,
-      message: 'Please fix the highlighted fields.',
-      errors,
-    });
   }
 
   /** The shape the app receives. */
@@ -173,7 +179,7 @@ export class ActivitiesService {
     return {
       id: String(a._id),
       status: a.status,
-      resultReason: a.resultReason,
+      resultReasonCode: a.resultReasonCode ?? null,
       activityType: t
         ? { id: String(t._id), code: t.code, category: t.category, name: t.name }
         : { id: String(a.activityTypeId), code: '', category: '', name: { en: 'Unknown', ar: 'غير معروف' } },
@@ -194,7 +200,12 @@ export class ActivitiesService {
         mimeType: p.mimeType,
         sizeBytes: p.sizeBytes,
       })),
-      statusHistory: a.statusHistory.map(({ from, to, reason, at }) => ({ from, to, reason, at })),
+      statusHistory: a.statusHistory.map(({ from, to, reasonCode, at }) => ({
+        from,
+        to,
+        reasonCode: reasonCode ?? null,
+        at,
+      })),
       submittedAt: a.submittedAt,
       createdAt: a.createdAt,
       updatedAt: a.updatedAt,

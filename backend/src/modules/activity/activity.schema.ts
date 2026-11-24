@@ -1,12 +1,14 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { type HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
 
+/** Lifecycle states from ADR-0005 (FR-010, FR-015, FR-026, FR-027, FR-028). `draft` is unused this phase. */
 export const ACTIVITY_STATUSES = [
-  'submitted', // waiting for the checker
+  'draft',
+  'submitted',
   'accepted',
-  'returned', // user must fix something and resubmit
+  'returned_for_correction',
   'rejected',
-  'processing_failed', // checker unavailable; will be retried
+  'pending_technical_processing',
 ] as const;
 export type ActivityStatus = (typeof ACTIVITY_STATUSES)[number];
 
@@ -50,7 +52,7 @@ export class ActivityPhoto {
 export class StatusChange {
   @Prop({ type: String, default: null }) from!: string | null;
   @Prop({ type: String, required: true }) to!: string;
-  @Prop({ type: String, default: '' }) reason!: string;
+  @Prop({ type: String, default: null }) reasonCode!: string | null;
   @Prop({ type: Date, default: () => new Date() }) at!: Date;
 }
 
@@ -71,7 +73,7 @@ export class Activity {
   @Prop({ type: SchemaFactory.createForClass(ActivityAmount), required: true }) amount!: ActivityAmount;
   @Prop({ type: [SchemaFactory.createForClass(ActivityPhoto)], default: [] }) photos!: ActivityPhoto[];
   @Prop({ type: String, required: true, enum: ACTIVITY_STATUSES, default: 'submitted' }) status!: ActivityStatus;
-  @Prop({ type: String, default: '' }) resultReason!: string; // shown to the user
+  @Prop({ type: String, default: null }) resultReasonCode!: string | null; // status reason code; the app renders the text
   @Prop({ type: String, required: true }) submitKey!: string; // stops double submission
   @Prop({ type: [SchemaFactory.createForClass(StatusChange)], default: [] }) statusHistory!: StatusChange[];
   @Prop({ type: Date, required: true }) submittedAt!: Date;
