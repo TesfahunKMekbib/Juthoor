@@ -110,6 +110,7 @@ class FakeActivityApi implements ActivityApi {
 
   final List<({SubmissionRequest request, String key})> submits = [];
   int listTypesCalls = 0;
+  int getCalls = 0;
 
   /// Views by idempotency key, so a replay returns the same record (FR-015).
   final Map<String, ActivityView> _byKey = {};
@@ -142,6 +143,7 @@ class FakeActivityApi implements ActivityApi {
 
   @override
   Future<ActivityView> getActivity(String id) async {
+    getCalls++;
     final e = getError;
     if (e != null) throw e;
     return activities.firstWhere(

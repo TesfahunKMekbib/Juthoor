@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -27,33 +29,160 @@ IconData statusIcon(ActivityStatus s) => switch (s) {
       _ => Icons.schedule,
     };
 
+Color statusColor(ActivityStatus s) => switch (s) {
+      ActivityStatus.accepted => AppColors.greenBright,
+      ActivityStatus.rejected => const Color(0xFFFF8A80),
+      ActivityStatus.returnedForCorrection => const Color(0xFFFFCC80),
+      _ => AppColors.textSecondary,
+    };
+
+/// Explanation for each state (FR-017, FR-027); never claims proof (FR-025).
+String statusBody(AppLocalizations l10n, ActivityStatus s) => switch (s) {
+      ActivityStatus.submitted => l10n.statusSubmittedBody,
+      ActivityStatus.accepted => l10n.statusAcceptedBody,
+      ActivityStatus.returnedForCorrection => l10n.statusReturnedBody,
+      ActivityStatus.rejected => l10n.statusRejectedBody,
+      ActivityStatus.pendingTechnicalProcessing => l10n.statusPendingBody,
+      ActivityStatus.draft => l10n.statusDraftBody,
+    };
+
+const _reasonCodes = {
+  'verification.evidenceUnclear',
+  'verification.evidenceUnrelated',
+  'processing.retrying',
+  'processing.failedPermanently',
+};
+
+/// Reason text for a status reason code; unknown codes get a generic text
+/// (NFR-016).
+String reasonText(AppLocalizations l10n, String code) =>
+    _reasonCodes.contains(code)
+        ? messageForCode(l10n, code)
+        : l10n.reasonGeneric;
+
+/// Status as icon + text, so it is never colour-only (NFR-015).
+class StatusChip extends StatelessWidget {
+  const StatusChip({super.key, required this.status});
+  final ActivityStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final c = statusColor(status);
+    return Container(
+      padding:
+          const EdgeInsetsDirectional.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        border: Border.all(color: c),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(statusIcon(status), size: 14, color: c),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(statusLabel(l10n, status),
+                style: TextStyle(fontSize: 12, color: c)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Confirmation and status of one submitted activity (FR-017, FR-051).
-/// Shows [initial] at once (the confirmation after submitting) and refreshes
-/// from the API on request. Automatic polling and the full set of decided
-/// states come with F5.
+/// Shows [initial] at once, then polls every [pollInterval] while the
+/// activity is submitted or pending, for at most [pollTimeout] (FR-028).
+/// Polling stops on a final state, dispose, or when the app is paused.
 class ActivityStatusScreen extends StatefulWidget {
-  const ActivityStatusScreen(
-      {super.key, required this.activityId, this.initial});
+  const ActivityStatusScreen({
+    super.key,
+    required this.activityId,
+    this.initial,
+    this.pollInterval = const Duration(seconds: 3),
+    this.pollTimeout = const Duration(seconds: 60),
+  });
 
   final String activityId;
   final ActivityView? initial;
+  final Duration pollInterval;
+  final Duration pollTimeout;
 
   @override
   State<ActivityStatusScreen> createState() => _ActivityStatusScreenState();
 }
 
-class _ActivityStatusScreenState extends State<ActivityStatusScreen> {
+class _ActivityStatusScreenState extends State<ActivityStatusScreen>
+    with WidgetsBindingObserver {
   ActivityView? view;
   bool loading = false;
   String? errorCode;
+  Timer? _timer;
+  Duration _polled = Duration.zero;
+  bool _fetching = false;
+
+  static bool _inFlight(ActivityStatus s) =>
+      s == ActivityStatus.submitted ||
+      s == ActivityStatus.pendingTechnicalProcessing;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     view = widget.initial;
     if (view == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => reload());
+    } else {
+      _syncPolling();
     }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _stopPolling();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _syncPolling();
+    } else {
+      _stopPolling();
+    }
+  }
+
+  void _stopPolling() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  void _syncPolling() {
+    final v = view;
+    if (v == null || !_inFlight(v.status) || _polled >= widget.pollTimeout) {
+      _stopPolling();
+    } else {
+      _timer ??= Timer.periodic(widget.pollInterval, (_) => _poll());
+    }
+  }
+
+  Future<void> _poll() async {
+    _polled += widget.pollInterval;
+    if (_polled >= widget.pollTimeout) _stopPolling();
+    if (_fetching) return;
+    _fetching = true;
+    try {
+      final v =
+          await context.read<ActivityApi>().getActivity(widget.activityId);
+      if (mounted) setState(() => view = v);
+    } on ApiException {
+      // Keep the last known state; the next tick or a manual refresh retries.
+    } finally {
+      _fetching = false;
+    }
+    if (mounted) _syncPolling();
   }
 
   Future<void> reload() async {
@@ -64,7 +193,10 @@ class _ActivityStatusScreenState extends State<ActivityStatusScreen> {
     });
     try {
       final v = await api.getActivity(widget.activityId);
-      if (mounted) setState(() => view = v);
+      if (mounted) {
+        setState(() => view = v);
+        _syncPolling();
+      }
     } on ApiException catch (e) {
       if (mounted) setState(() => errorCode = e.code);
     } finally {
@@ -91,6 +223,7 @@ class _ActivityStatusScreenState extends State<ActivityStatusScreen> {
         child: RefreshIndicator(
           onRefresh: reload,
           child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsetsDirectional.all(16),
             children: [
               if (loading) const LinearProgressIndicator(),
@@ -171,7 +304,7 @@ class _Details extends StatelessWidget {
             excludeSemantics: true,
             child: Row(
               children: [
-                Icon(statusIcon(v.status), color: AppColors.greenBright),
+                Icon(statusIcon(v.status), color: statusColor(v.status)),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(label,
@@ -181,15 +314,14 @@ class _Details extends StatelessWidget {
               ],
             ),
           ),
-          if (v.status == ActivityStatus.submitted)
-            Padding(
-              padding: const EdgeInsetsDirectional.only(top: 8),
-              child: Text(l10n.statusSubmittedBody),
-            ),
+          Padding(
+            padding: const EdgeInsetsDirectional.only(top: 8),
+            child: Text(statusBody(l10n, v.status)),
+          ),
           if (reason != null)
             Padding(
               padding: const EdgeInsetsDirectional.only(top: 8),
-              child: Text(messageForCode(l10n, reason)),
+              child: Text(reasonText(l10n, reason)),
             ),
           const Divider(height: 24),
           row(l10n.typeLabel, v.activityType.name.of(locale)),

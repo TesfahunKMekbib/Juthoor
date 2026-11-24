@@ -101,7 +101,7 @@ class _MyActivitiesScreenState extends State<MyActivitiesScreen> {
                     child: Row(
                       children: [
                         Icon(statusIcon(a.status),
-                            color: AppColors.greenBright),
+                            color: statusColor(a.status)),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(
@@ -110,11 +110,18 @@ class _MyActivitiesScreenState extends State<MyActivitiesScreen> {
                               Text(name,
                                   style: const TextStyle(
                                       fontWeight: FontWeight.w600)),
-                              Text(
-                                date.isEmpty ? status : '$status · $date',
-                                style: const TextStyle(
-                                    fontSize: 12,
-                                    color: AppColors.textSecondary),
+                              const SizedBox(height: 4),
+                              Wrap(
+                                spacing: 8,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  StatusChip(status: a.status),
+                                  if (date.isNotEmpty)
+                                    Text(date,
+                                        style: const TextStyle(
+                                            fontSize: 12,
+                                            color: AppColors.textSecondary)),
+                                ],
                               ),
                             ],
                           ),
