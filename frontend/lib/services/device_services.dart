@@ -38,7 +38,10 @@ class GeolocatorLocationProvider implements LocationProvider {
       }
       final p = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
+          // ~100 m is enough to resolve the emirate near borders (FR-020) without
+          // requesting high-precision GPS (data minimisation, NFR-007). The
+          // coordinates are only sent for in-memory validation, never stored.
+          accuracy: LocationAccuracy.medium,
           timeLimit: Duration(seconds: 10),
         ),
       );
