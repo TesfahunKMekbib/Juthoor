@@ -14,7 +14,7 @@ export class ActivityTypesController {
 
   @Get(':id')
   async get(@Param('id') id: string) {
-    const { _id, __v, ...rest } = await this.types.findById(id);
+    const { _id, __v, ...rest } = await this.types.findPublishedById(id);
     return { id: String(_id), ...rest };
   }
 }

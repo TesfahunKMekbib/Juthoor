@@ -1,21 +1,37 @@
-// @ts-ignore: NestJS types may be unavailable in the current TypeScript environment.
-import { Module } from '@nestjs/common';
-import { ActivitiesController } from './activities.controller';
-import { ActivitiesService } from './activities.service';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { randomUUID } from 'node:crypto';
+import { isValidObjectId, Model, Types } from 'mongoose';
+import { EventsService } from '../../common/events/events.service.js';
+import {
+  PHOTO_STORAGE,
+  type PhotoStorage,
+  type PhotoToStore,
+  type StoredPhoto,
+} from '../integration/storage/photo-storage.js';
+import { ActivityTypesService, type ActivityTypeRecord } from './activity-types.service.js';
+import { Activity, ACTIVITY_STATUSES, type ActivityStatus } from './activity.schema.js';
+import { checkSubmission, type SubmissionInput } from './submission-rules.js';
 
-@Module({
-  controllers: [ActivitiesController],
-  providers: [ActivitiesService],
-  exports: [ActivitiesService],
-})
-export class ActivitiesModule { }
+type ActivityRecord = Activity & {
+  _id: Types.ObjectId;
+  createdAt?: Date;
+  updatedAt?: Date;
+};
+type TypeRecord = ActivityTypeRecord;
 
 @Injectable()
 export class ActivitiesService {
   constructor(
     @InjectModel(Activity.name) private readonly activities: Model<Activity>,
     private readonly types: ActivityTypesService,
-    private readonly photos: PhotosService,
+    @Inject(PHOTO_STORAGE) private readonly photos: PhotoStorage,
     private readonly events: EventsService,
   ) {}
 
@@ -40,6 +56,7 @@ export class ActivitiesService {
 
     // Store the photos, then the activity. If saving the activity fails, remove the photos again.
     const stored: StoredPhoto[] = [];
+    let record: ActivityRecord;
     try {
       for (const [i, file] of files.entries()) {
         stored.push(await this.photos.save(file, { userId, kind: clean.photoKinds[i] }));
@@ -60,17 +77,7 @@ export class ActivitiesService {
         statusHistory: [{ from: null, to: 'submitted', reason: '', at: now }],
         submittedAt: now,
       });
-      const record = created.toObject() as ActivityRecord;
-      this.events.publish('ActivitySubmitted', {
-        activityId: String(record._id),
-        userId,
-        activityTypeCode: type.code,
-        category: type.category,
-        amount: record.amount,
-        emirate: record.location.emirate,
-        doneAt: record.doneAt,
-      });
-      return { created: true, activity: await this.toView(record, type) };
+      record = created.toObject() as ActivityRecord;
     } catch (err) {
       await this.photos.remove(stored.map((p) => p.fileId));
       if ((err as { code?: number }).code === 11000) {
@@ -80,8 +87,22 @@ export class ActivitiesService {
       }
       throw err;
     }
+
+    // Published only after the activity is safely stored, outside the photo-cleanup block, so a
+    // downstream failure can never leave a saved activity pointing at deleted photos (FR-015, FR-028).
+    this.events.publish('ActivitySubmitted', {
+      activityId: String(record._id),
+      userId,
+      activityTypeCode: type.code,
+      category: type.category,
+      amount: record.amount,
+      emirate: record.location.emirate,
+      doneAt: record.doneAt,
+    });
+    return { created: true, activity: await this.toView(record, type) };
   }
-   async listForUser(userId: string, status?: string) {
+
+  async listForUser(userId: string, status?: string) {
     const filter: Record<string, unknown> = { userId: new Types.ObjectId(userId) };
     if (status) {
       if (!(ACTIVITY_STATUSES as readonly string[]).includes(status)) throw new BadRequestException('Unknown status');
@@ -95,7 +116,9 @@ export class ActivitiesService {
 
   async getForUser(userId: string, id: string) {
     const activity = isValidObjectId(id)
-      ? await this.activities.findOne({ _id: id, userId: new Types.ObjectId(userId) }).lean<ActivityRecord>()
+      ? await this.activities
+          .findOne({ _id: new Types.ObjectId(id), userId: new Types.ObjectId(userId) })
+          .lean<ActivityRecord>()
       : null;
     if (!activity) throw new NotFoundException('Activity not found');
     return this.toView(activity);
@@ -124,7 +147,7 @@ export class ActivitiesService {
       .lean<ActivityRecord[]>();
   }
 
-    private parseData(raw: string | undefined): SubmissionInput {
+  private parseData(raw: string | undefined): SubmissionInput {
     if (!raw) throw new BadRequestException('Missing "data" field with the activity details (JSON).');
     try {
       const parsed: unknown = JSON.parse(raw);
