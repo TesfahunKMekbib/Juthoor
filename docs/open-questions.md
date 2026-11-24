@@ -33,7 +33,7 @@ Decision: implement only the FR-007 categories; Transport and Other are flagged,
 FR-007 lists six categories (no transport). Flutter UI and prototype add Transport and Other.
 
 ### Q-A4b — Add Transport and Other categories via a requirements change?
-Status: open · Blocks: Flutter category chips reconciliation, any seed data beyond FR-007 · Owner: stakeholders
+Status: open (stakeholders) · Interim UI decision (owner, 2026-11-25): Transport/Other chips hidden until decided · Blocks: Flutter category chips reconciliation, any seed data beyond FR-007 · Owner: stakeholders
 Transport and Other are stakeholder-approved and present in the Flutter UI, but absent from FR-007.
 Question for stakeholders: amend FR-007 (and FR-011 category-specific fields) to add them, or remove
 them from the UI? Until decided, backend seed data contains only the FR-007 categories.
@@ -108,6 +108,56 @@ concrete provider still TBD — choose before production use (ADR-0007, 2026-11-
 ### Q-C4 — Hosting / deployment target
 Status: decided (deferred) · Owner: team
 Decision: final hosting decision deferred; backend stays container-ready per NFR-038 (ADR-0009, 2026-11-25).
+
+## E. Add an Activity use case (raised 2026-11-25, `docs/features/FR-009-028-054-add-activity/`)
+
+### Q-E1 — FR-001 deferral and the dev test participant
+Status: decided (owner, 2026-11-25) — recommendation below accepted · Was: Blocks: plan approval (resolved by accepting ADR-0010) · Owner: project owner
+Owner removed authentication from this phase. FR-001 (Must) stays in the approved file; recommendation:
+record it as **deferred**, not deleted (traceability note), and accept ADR-0010. NFR-010/011 and the
+"authenticated participant" precondition of NFR-013 are unverifiable until auth exists.
+
+### Q-E2 — AI outcome mapping: Returned for Correction vs Rejected
+Status: decided (owner, 2026-11-25) — recommendation below accepted · Was: Blocks: Verification decision function (plan task B9) · Owner: project owner
+FR-026 defines Accepted (score ≥ acceptance threshold). FR-027 says Returned when evidence "may be
+corrected", Rejected on "a defined rejection rule"; FR-022 mentions "rejection thresholds" but no rule is
+defined. Recommendation: `score ≥ AI_ACCEPT_THRESHOLD` → Accepted; `AI_REJECT_THRESHOLD ≤ score <
+accept` → Returned for Correction; `score < AI_REJECT_THRESHOLD` → Rejected. Values from config (proposed
+dev defaults 0.70 / 0.30); FR-022 admin configuration deferred.
+
+### Q-E3 — Deterministic failures: 422 response or persisted Rejected status?
+Status: decided (owner, 2026-11-25) — recommendation below accepted · Was: Blocks: submission contract (plan tasks B2, B5) · Owner: project owner
+FR-019 says "deterministically reject" a future date; ADR-0005 lists FR-019 as a source of Rejected;
+FR-023 says failing deterministic checks show field-level errors and let the participant correct the draft.
+Recommendation: all FR-018–021 failures return `422` with field codes and **no record is created**
+(FR-023 governs the UX); the persisted Rejected status is produced only by verification rules (Q-E2).
+
+### Q-E4 — FR-028 after retries are exhausted
+Status: decided (owner, 2026-11-25) — recommendation below accepted · Was: Blocks: exhausted-retry branch of B9 · Owner: project owner
+ADR-0005 has no "permanently failed" status. Recommendation: activity stays Pending Technical Processing
+with reason code `processing.failedPermanently`; the job is marked `exhausted` for future FR-055 admin
+retry. Proposed dev defaults: 5 attempts, exponential backoff 30 s → 8 min.
+
+### Q-E5 — Seed activity-type definitions (FR-007, FR-008, FR-011)
+Status: decided (owner, 2026-11-25) — recommendation below accepted · Was: Blocks: dev seed (B6) · Owner: project owner
+No admin catalog (FR-007/008) is in scope, so types are seeded. Values (names, units, min/max, photo
+counts, size limit) are configuration, not requirements, and need owner sign-off. Specific ambiguity:
+for water/energy, is the credited quantity the participant-entered amount or the difference of the
+FR-011 before/after meter readings? Recommendation: the participant enters the amount; both readings are
+required numeric fields; no derived-quantity rule is added (that would be a new requirement).
+
+### Q-E6 — UAE / emirate boundary data for FR-020
+Status: decided (owner, 2026-11-25) — recommendation below accepted · Was: Blocks: device-GPS location validation (B4b) · Owner: project owner
+Exact coordinates must be checked against the UAE boundary and mapped to an emirate in memory (ADR-0006).
+Needs a boundary dataset (source, licence, simplification) or a mapping API (Q-C3-like provider choice).
+Recommendation: a simplified ADM1 GeoJSON with an open licence (e.g. geoBoundaries, CC BY 4.0) behind a
+`GeoBoundaryProvider` interface in `modules/integration/geo/`; manual entry (FR-012) works without it.
+
+### Q-E7 — In-scope depth for FR-010 drafts, FR-024 blurring, FR-027 replacement evidence
+Status: decided (owner, 2026-11-25) — recommendation below accepted · Was: Blocks: nothing in Slices 1–2 · Owner: project owner
+Owner's scope lists selection, data entry, upload, location, submission, AI verification, status display.
+Recommendation: defer server-side drafts (FR-010; FR-023 met by the form keeping its state), defer FR-024
+(already deferred by ADR-0006), and treat FR-027 replacement evidence as an optional Slice 3.
 
 ## D. Baseline technical debt (blocks strict CI)
 
