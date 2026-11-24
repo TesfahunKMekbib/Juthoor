@@ -9,7 +9,9 @@
     "node": ">=24"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "node scripts/build.mjs",
+    "seed:dev": "node scripts/build.mjs && node --env-file-if-exists=.env dist/src/dev/seed.js",
+    "typecheck":"tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"**/*.ts\"",

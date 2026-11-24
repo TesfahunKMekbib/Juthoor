@@ -1,9 +1,18 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'node:crypto';
 import { isValidObjectId, Model, Types } from 'mongoose';
-import { ValidationFailedException } from '../../common/errors/validation-failed.exception.js';
+import type { FieldCipher } from '../../common/crypto/field-cipher.js';
+import { type ErrorDetail, ValidationFailedException } from '../../common/errors/validation-failed.exception.js';
 import { EventsService } from '../../common/events/events.service.js';
+import { GEO_BOUNDARY_PROVIDER, type GeoBoundaryProvider } from '../integration/geo/geo-boundary-provider.js';
+import {
+  EVIDENCE_SANITIZER,
+  EvidenceRejectedError,
+  type EvidenceSanitizer,
+  type SanitizedEvidence,
+} from '../integration/image/evidence-sanitizer.js';
+import { detectImageType } from '../integration/image/image-signature.js';
 import {
   PHOTO_STORAGE,
   type PhotoStorage,
@@ -11,7 +20,8 @@ import {
   type StoredPhoto,
 } from '../integration/storage/photo-storage.js';
 import { ActivityTypesService, type ActivityTypeRecord } from './activity-types.service.js';
-import { Activity, ACTIVITY_STATUSES, type ActivityStatus } from './activity.schema.js';
+import { Activity, ACTIVITY_STATUSES, type ActivityLocation, type ActivityStatus } from './activity.schema.js';
+import { LOCATION_CIPHER } from './activity.tokens.js';
 import { checkSubmission, type SubmissionInput } from './submission-rules.js';
 
 type ActivityRecord = Activity & {
@@ -21,15 +31,28 @@ type ActivityRecord = Activity & {
 };
 type TypeRecord = ActivityTypeRecord;
 
+const MB = 1024 * 1024;
+const MAX_PHOTO_DIMENSION = 2560;
+
 @Injectable()
 export class ActivitiesService {
+  private readonly logger = new Logger(ActivitiesService.name);
+
   constructor(
     @InjectModel(Activity.name) private readonly activities: Model<Activity>,
     private readonly types: ActivityTypesService,
     @Inject(PHOTO_STORAGE) private readonly photos: PhotoStorage,
     private readonly events: EventsService,
+    @Inject(GEO_BOUNDARY_PROVIDER) private readonly geo: GeoBoundaryProvider,
+    @Inject(EVIDENCE_SANITIZER) private readonly sanitizer: EvidenceSanitizer,
+    @Inject(LOCATION_CIPHER) private readonly cipher: FieldCipher,
   ) {}
 
+  /**
+   * Plan section 3 order: idempotency (FR-015), pure rules (FR-018-021, FR-023), location (FR-012, FR-020),
+   * sanitize (FR-021, NFR-008), store, save, publish. Deterministic failures create no record (Q-E3).
+   * A file's real type comes from its leading bytes; the client's MIME type is ignored (FR-021).
+   */
   async submit(userId: string, rawData: string | undefined, files: PhotoToStore[], submitKeyHeader?: string) {
     const input = this.parseData(rawData);
     const submitKey = (submitKeyHeader ?? '').trim().slice(0, 100) || randomUUID();
@@ -50,22 +73,46 @@ export class ActivitiesService {
       ]);
     }
 
-    const { errors, clean } = checkSubmission(type, input, files);
+    const { errors, clean } = checkSubmission(
+      type,
+      input,
+      files.map((f) => ({ mimetype: detectImageType(f.buffer) ?? 'application/octet-stream', size: f.size })),
+    );
     if (!clean) throw new ValidationFailedException(errors);
-    // Device location needs the geo provider (B4b/B5); until it is wired only the manual emirate works.
-    if (clean.location.source !== 'manual' || !clean.location.emirate) {
+
+    // Device coordinates live in memory only and are checked against the UAE boundaries (FR-020, ADR-0006).
+    let emirate = clean.location.emirate;
+    if (clean.location.source === 'device' && clean.location.coordinates) {
+      const found = this.geo.locate(clean.location.coordinates.lat, clean.location.coordinates.lng);
+      if (found === 'outsideUae') {
+        throw new ValidationFailedException([
+          { field: 'location', code: 'location.outsideUae', message: 'The activity must be in the UAE.' },
+        ]);
+      }
+      emirate = found;
+    }
+    if (!emirate) {
       throw new ValidationFailedException([
-        { field: 'location.source', code: 'location.sourceInvalid', message: 'Choose an emirate manually.' },
+        { field: 'location', code: 'location.emirateInvalid', message: 'Please choose an emirate in the UAE.' },
       ]);
     }
-    const emirate = clean.location.emirate;
+
+    // Re-encode every photo: EXIF/GPS dropped, file name generated (NFR-007, NFR-008).
+    const clearPhotos = await this.sanitizeAll(files, type.photoRules.maxSizeMB * MB);
+    const location: ActivityLocation = { emirate, area: clean.location.area };
+    const locationEnc = this.cipher.encryptJson(location);
 
     // Store the photos, then the activity. If saving the activity fails, remove the photos again.
     const stored: StoredPhoto[] = [];
     let record: ActivityRecord;
     try {
-      for (const [i, file] of files.entries()) {
-        stored.push(await this.photos.save(file, { userId, kind: clean.photoKinds[i] }));
+      for (const [i, photo] of clearPhotos.entries()) {
+        stored.push(
+          await this.photos.save(
+            { originalname: photo.fileName, mimetype: photo.mimeType, size: photo.sizeBytes, buffer: photo.buffer },
+            { userId, kind: clean.photoKinds[i] },
+          ),
+        );
       }
       const now = new Date();
       const created = await this.activities.create({
@@ -74,7 +121,7 @@ export class ActivitiesService {
         typeVersion: type.version,
         description: clean.description,
         doneAt: clean.doneAt,
-        location: { emirate, area: clean.location.area },
+        locationEnc,
         answers: clean.answers,
         amount: { value: clean.amountValue, unit: type.amount.unit },
         photos: stored.map((p, i) => ({ ...p, kind: clean.photoKinds[i], uploadedAt: now })),
@@ -102,10 +149,47 @@ export class ActivitiesService {
       activityTypeCode: type.code,
       category: type.category,
       amount: record.amount,
-      emirate: record.location.emirate,
+      emirate,
       doneAt: record.doneAt,
     });
     return { created: true, activity: await this.toView(record, type) };
+  }
+
+  private async sanitizeAll(files: PhotoToStore[], maxBytes: number): Promise<SanitizedEvidence[]> {
+    const out: SanitizedEvidence[] = [];
+    const errors: ErrorDetail[] = [];
+    for (const [i, file] of files.entries()) {
+      try {
+        out.push(await this.sanitizer.sanitize(file.buffer, { maxBytes, maxDimension: MAX_PHOTO_DIMENSION }));
+      } catch (err) {
+        if (!(err instanceof EvidenceRejectedError)) throw err;
+        errors.push({
+          field: `photos[${i}]`,
+          code: `photos.${err.code}`,
+          message: 'This photo cannot be used. Please choose another one.',
+        });
+      }
+    }
+    if (errors.length) throw new ValidationFailedException(errors);
+    return out;
+  }
+
+  /** The bytes of one photo of the caller's own activity; anything else is a 404 (NFR-009, NFR-025). */
+  async getPhotoForUser(userId: string, activityId: string, photoId: string) {
+    const notFound = () => new NotFoundException({ code: 'photo.notFound', message: 'Photo not found' });
+    if (!isValidObjectId(activityId) || !isValidObjectId(photoId)) throw notFound();
+    const fileId = new Types.ObjectId(photoId);
+    const owned = await this.activities
+      .findOne({
+        _id: new Types.ObjectId(activityId),
+        userId: new Types.ObjectId(userId),
+        'photos.fileId': fileId,
+      })
+      .lean<ActivityRecord>();
+    if (!owned) throw notFound();
+    const file = await this.photos.read(fileId);
+    if (!file) throw notFound();
+    return file;
   }
 
   async listForUser(userId: string, status?: string) {
@@ -172,12 +256,23 @@ export class ActivitiesService {
     }
   }
 
-  /** The shape the app receives. */
+  /** Owner-only: the location is decrypted here, so this must never serve anyone but the owner (NFR-004). */
+  private decryptLocation(a: ActivityRecord): ActivityLocation | null {
+    try {
+      return this.cipher.decryptJson<ActivityLocation>(a.locationEnc);
+    } catch {
+      this.logger.error(`Location could not be decrypted (activityId=${String(a._id)})`);
+      return null;
+    }
+  }
+
+  /** The shape the app receives (plan section 1). */
   private async toView(a: ActivityRecord, type?: TypeRecord) {
     const t = type ?? (await this.types.findById(String(a.activityTypeId)).catch(() => undefined));
     const labels = new Map((t?.formFields ?? []).map((f) => [f.key, f.label]));
+    const id = String(a._id);
     return {
-      id: String(a._id),
+      id,
       status: a.status,
       resultReasonCode: a.resultReasonCode ?? null,
       activityType: t
@@ -185,18 +280,18 @@ export class ActivitiesService {
         : { id: String(a.activityTypeId), code: '', category: '', name: { en: 'Unknown', ar: 'غير معروف' } },
       description: a.description,
       doneAt: a.doneAt,
-      location: a.location,
+      location: this.decryptLocation(a),
       answers: Object.entries(a.answers ?? {}).map(([key, value]) => ({
         key,
         label: labels.get(key) ?? { en: key, ar: key },
         value,
       })),
-      amount: a.amount,
+      amount: { value: a.amount.value, unit: a.amount.unit },
+      acceptedAmount: a.status === 'accepted' ? { value: a.amount.value, unit: a.amount.unit } : null,
       photos: a.photos.map((p) => ({
         id: String(p.fileId),
         kind: p.kind,
-        url: `/api/photos/${String(p.fileId)}`,
-        fileName: p.fileName,
+        url: `/api/activities/${id}/photos/${String(p.fileId)}`,
         mimeType: p.mimeType,
         sizeBytes: p.sizeBytes,
       })),
@@ -207,7 +302,6 @@ export class ActivitiesService {
         at,
       })),
       submittedAt: a.submittedAt,
-      createdAt: a.createdAt,
       updatedAt: a.updatedAt,
     };
   }

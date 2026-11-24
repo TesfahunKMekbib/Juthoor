@@ -25,10 +25,19 @@ export const EMIRATES = [
   'Fujairah',
 ] as const;
 
+/** Emirate and area as read back from the encrypted field; exact coordinates are never stored (ADR-0006). */
+export interface ActivityLocation {
+  emirate: string;
+  area: string;
+}
+
+/** AES-256-GCM envelope of the location (NFR-004); see common/crypto/field-cipher.ts. */
 @Schema({ _id: false })
-export class ActivityLocation {
-  @Prop({ type: String, required: true, enum: EMIRATES }) emirate!: string;
-  @Prop({ type: String, default: '' }) area!: string;
+export class EncryptedLocation {
+  @Prop({ type: Number, required: true }) v!: number;
+  @Prop({ type: String, required: true }) iv!: string;
+  @Prop({ type: String, required: true }) tag!: string;
+  @Prop({ type: String, required: true }) ct!: string;
 }
 
 @Schema({ _id: false })
@@ -68,7 +77,7 @@ export class Activity {
   @Prop({ type: Number, required: true }) typeVersion!: number; // rules version used when submitted
   @Prop({ type: String, required: true, maxlength: 500 }) description!: string;
   @Prop({ type: Date, required: true }) doneAt!: Date; // when it happened
-  @Prop({ type: SchemaFactory.createForClass(ActivityLocation), required: true }) location!: ActivityLocation;
+  @Prop({ type: SchemaFactory.createForClass(EncryptedLocation), required: true }) locationEnc!: EncryptedLocation;
   @Prop({ type: MongooseSchema.Types.Mixed, default: {} }) answers!: Record<string, string | number>;
   @Prop({ type: SchemaFactory.createForClass(ActivityAmount), required: true }) amount!: ActivityAmount;
   @Prop({ type: [SchemaFactory.createForClass(ActivityPhoto)], default: [] }) photos!: ActivityPhoto[];

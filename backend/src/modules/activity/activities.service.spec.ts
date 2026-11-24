@@ -1,7 +1,11 @@
 import { jest } from '@jest/globals';
+import sharp from 'sharp';
 import { BadRequestException, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { Types } from 'mongoose';
+import { createLocationCipher } from '../../common/config/app-config.js';
 import { EventsService } from '../../common/events/events.service.js';
+import type { GeoBoundaryProvider, LocateResult } from '../integration/geo/geo-boundary-provider.js';
+import { SharpEvidenceSanitizer } from '../integration/image/sharp-evidence-sanitizer.js';
 import { InMemoryPhotoStorage } from '../integration/storage/in-memory-photo-storage.js';
 import { ActivitiesService } from './activities.service.js';
 
@@ -22,7 +26,16 @@ const type = {
   amount: { unit: 'trees', min: 1, max: 10 },
   photoRules: { minPhotos: 1, maxPhotos: 2, neededKinds: [], maxSizeMB: 1 },
 };
-const file = { originalname: 'a.jpg', mimetype: 'image/jpeg', size: 3, buffer: Buffer.from([1, 2, 3]) };
+const cipher = createLocationCipher('ab'.repeat(32));
+let file: { originalname: string; mimetype: string; size: number; buffer: Buffer };
+const jpeg = (withExif = false) => {
+  const img = sharp({ create: { width: 16, height: 16, channels: 3, background: '#2a7' } }).jpeg();
+  return (withExif ? img.withExif({ IFD0: { Copyright: 'secret-owner' } }) : img).toBuffer();
+};
+beforeAll(async () => {
+  const buffer = await jpeg();
+  file = { originalname: 'a.jpg', mimetype: 'image/jpeg', size: buffer.length, buffer };
+});
 const data = (over: Record<string, unknown> = {}) =>
   JSON.stringify({
     activityTypeId: String(typeId),
@@ -46,7 +59,7 @@ const storedActivity = (over: Record<string, unknown> = {}) => ({
   status: 'submitted',
   description: 'Planted',
   doneAt: new Date(),
-  location: { emirate: 'Dubai', area: '' },
+  locationEnc: cipher.encryptJson({ emirate: 'Dubai', area: 'Marina' }),
   answers: { x: 1 },
   amount: { value: 2, unit: 'trees' },
   photos: [],
@@ -65,6 +78,7 @@ function setup() {
   const types = { findById: mockFn().mockResolvedValue(type), findByIds: mockFn().mockResolvedValue([type]) };
   const photos = new InMemoryPhotoStorage();
   const events = new EventsService();
+  const geo = { locate: jest.fn<(lat: number, lng: number) => LocateResult>().mockReturnValue('Dubai') };
   const publish = jest.spyOn(events, 'publish');
   // Mocks stand in for the Mongoose model and the types service; cast through unknown.
   const svc = new ActivitiesService(
@@ -72,8 +86,11 @@ function setup() {
     types as unknown as ConstructorParameters<typeof ActivitiesService>[1],
     photos,
     events,
+    geo as GeoBoundaryProvider,
+    new SharpEvidenceSanitizer(),
+    cipher,
   );
-  return { model, types, photos, publish, svc };
+  return { model, types, photos, publish, svc, geo };
 }
 
 describe('ActivitiesService', () => {
@@ -130,15 +147,108 @@ describe('ActivitiesService', () => {
       await expect(p).rejects.toMatchObject({ errors: [{ code: 'activityType.unavailable' }] });
     });
 
-    it('creates no record and stores no photo for a device location until geo is wired (Q-E3)', async () => {
-      const { model, svc, photos } = setup();
+    it('accepts a device location inside the UAE and stores only the encrypted emirate (FR-020, NFR-007)', async () => {
+      const { model, svc, geo, publish } = setup();
       model.findOne.mockReturnValue(chain(null));
-      const loc = { source: 'device', coordinates: { lat: 24.4, lng: 54.3 } };
-      await expect(svc.submit(userId, data({ location: loc }), [file], 'k')).rejects.toBeInstanceOf(
-        UnprocessableEntityException,
-      );
+      model.create.mockResolvedValue({ toObject: () => storedActivity() });
+      const loc = { source: 'device', coordinates: { lat: 24.4539, lng: 54.3773 }, area: 'Reem' };
+      await svc.submit(userId, data({ location: loc }), [file], 'k');
+      expect(geo.locate).toHaveBeenCalledWith(24.4539, 54.3773);
+      const doc = model.create.mock.calls[0][0];
+      const json = JSON.stringify(doc);
+      expect(json).not.toContain('24.45');
+      expect(json).not.toContain('54.37');
+      expect(json).not.toContain('coordinates');
+      expect(doc.location).toBeUndefined();
+      expect(cipher.decryptJson(doc.locationEnc)).toEqual({ emirate: 'Dubai', area: 'Reem' });
+      expect(JSON.stringify(publish.mock.calls)).not.toContain('24.45');
+    });
+
+    it('rejects a device location outside the UAE and stores nothing (FR-020, Q-E3)', async () => {
+      const { model, svc, geo, photos } = setup();
+      model.findOne.mockReturnValue(chain(null));
+      geo.locate.mockReturnValue('outsideUae');
+      const loc = { source: 'device', coordinates: { lat: 51.5, lng: -0.12 } };
+      await expect(svc.submit(userId, data({ location: loc }), [file], 'k')).rejects.toMatchObject({
+        errors: [{ code: 'location.outsideUae' }],
+      });
       expect(model.create).not.toHaveBeenCalled();
       expect(photos.files.size).toBe(0);
+    });
+
+    it('rejects a spoofed MIME type: the bytes decide, not the header (FR-021)', async () => {
+      const { model, svc, photos } = setup();
+      model.findOne.mockReturnValue(chain(null));
+      const fake = { originalname: 'x.jpg', mimetype: 'image/jpeg', size: 5, buffer: Buffer.from('<?php') };
+      await expect(svc.submit(userId, data(), [fake], 'k')).rejects.toMatchObject({
+        errors: [{ field: 'photos[0]', code: 'photos.typeNotAllowed' }],
+      });
+      expect(photos.files.size).toBe(0);
+    });
+
+    it('ignores a wrong client MIME type when the bytes are a real image (FR-021)', async () => {
+      const { model, svc } = setup();
+      model.findOne.mockReturnValue(chain(null));
+      model.create.mockResolvedValue({ toObject: () => storedActivity() });
+      const r = await svc.submit(userId, data(), [{ ...file, mimetype: 'application/octet-stream' }], 'k');
+      expect(r.created).toBe(true);
+    });
+
+    it('reports an unreadable image as photos.unreadable (FR-021)', async () => {
+      const { model, svc, photos } = setup();
+      model.findOne.mockReturnValue(chain(null));
+      const truncated = { ...file, buffer: file.buffer.subarray(0, 40), size: 40 };
+      await expect(svc.submit(userId, data(), [truncated], 'k')).rejects.toMatchObject({
+        errors: [{ field: 'photos[0]', code: 'photos.unreadable' }],
+      });
+      expect(photos.files.size).toBe(0);
+    });
+
+    it('rethrows unexpected sanitizer failures', async () => {
+      const { model, svc } = setup();
+      model.findOne.mockReturnValue(chain(null));
+      jest.spyOn(SharpEvidenceSanitizer.prototype, 'sanitize').mockRejectedValueOnce(new Error('boom'));
+      await expect(svc.submit(userId, data(), [file], 'k')).rejects.toThrow('boom');
+    });
+
+    it('stores a re-encoded copy without EXIF and with a generated name (NFR-007, NFR-008)', async () => {
+      const { model, svc, photos } = setup();
+      model.findOne.mockReturnValue(chain(null));
+      model.create.mockResolvedValue({ toObject: () => storedActivity() });
+      const withExif = await jpeg(true);
+      expect((await sharp(withExif).metadata()).exif).toBeDefined();
+      await svc.submit(
+        userId,
+        data(),
+        [{ originalname: 'IMG_home_address.jpg', mimetype: 'image/jpeg', size: withExif.length, buffer: withExif }],
+        'k',
+      );
+      const [saved] = [...photos.files.values()];
+      expect((await sharp(saved.buffer).metadata()).exif).toBeUndefined();
+      expect(saved.buffer.includes(Buffer.from('secret-owner'))).toBe(false);
+      const doc = model.create.mock.calls[0][0];
+      expect(doc.photos[0].fileName).toMatch(/^[0-9a-f-]{36}\.jpg$/);
+      expect(JSON.stringify(doc)).not.toContain('IMG_home_address');
+    });
+
+    it('rejects a photo above the type size limit (FR-021)', async () => {
+      const { model, svc, types } = setup();
+      model.findOne.mockReturnValue(chain(null));
+      types.findById.mockResolvedValue({ ...type, photoRules: { ...type.photoRules, maxSizeMB: 0.00001 } });
+      await expect(svc.submit(userId, data(), [file], 'k')).rejects.toMatchObject({
+        errors: [{ code: 'photos.tooLarge' }],
+      });
+    });
+
+    it('rejects when the geo provider yields no emirate', async () => {
+      const { model, svc, geo } = setup();
+      model.findOne.mockReturnValue(chain(null));
+      geo.locate.mockReturnValue(undefined as unknown as LocateResult);
+      const loc = { source: 'device', coordinates: { lat: 24, lng: 54 } };
+      await expect(svc.submit(userId, data({ location: loc }), [file], 'k')).rejects.toMatchObject({
+        errors: [{ code: 'location.emirateInvalid' }],
+      });
+      expect(model.create).not.toHaveBeenCalled();
     });
 
     it('rejects rule violations with 422 field errors and stores nothing (FR-023)', async () => {
@@ -217,6 +327,26 @@ describe('ActivitiesService', () => {
       model.findOne.mockReturnValue(chain(null));
       await expect(svc.getForUser(userId, String(new Types.ObjectId()))).rejects.toBeInstanceOf(NotFoundException);
     });
+    it('returns the decrypted location, owner photo url and reason codes only to the owner (NFR-009)', async () => {
+      const { model, svc } = setup();
+      const fileId = new Types.ObjectId();
+      const rec = storedActivity({
+        status: 'accepted',
+        resultReasonCode: null,
+        photos: [{ kind: 'photo', fileId, fileName: 'g.jpg', mimeType: 'image/jpeg', sizeBytes: 9 }],
+      });
+      model.findOne.mockReturnValue(chain(rec));
+      const v = await svc.getForUser(userId, String(rec._id));
+      expect(v.location).toEqual({ emirate: 'Dubai', area: 'Marina' });
+      expect(v.photos[0].url).toBe(`/api/activities/${String(rec._id)}/photos/${String(fileId)}`);
+      expect(v.acceptedAmount).toEqual({ value: 2, unit: 'trees' });
+      expect(model.findOne.mock.calls[0][0]).toMatchObject({ userId: new Types.ObjectId(userId) });
+    });
+    it('returns a null location when decryption fails', async () => {
+      const { model, svc } = setup();
+      model.findOne.mockReturnValue(chain(storedActivity({ locationEnc: { v: 1, iv: 'a', tag: 'b', ct: 'c' } })));
+      expect((await svc.getForUser(userId, String(new Types.ObjectId()))).location).toBeNull();
+    });
     it('falls back to an Unknown type when the type is gone', async () => {
       const { model, types, svc } = setup();
       types.findById.mockRejectedValue(new NotFoundException());
@@ -224,6 +354,40 @@ describe('ActivitiesService', () => {
       const v = await svc.getForUser(userId, String(new Types.ObjectId()));
       expect(v.activityType.name.en).toBe('Unknown');
       expect(v.answers[0].label).toEqual({ en: 'x', ar: 'x' });
+    });
+  });
+
+  describe('getPhotoForUser (NFR-009, NFR-025)', () => {
+    const fileId = new Types.ObjectId();
+    it('returns the bytes to the owner', async () => {
+      const { model, svc, photos } = setup();
+      photos.files.set(String(fileId), {
+        buffer: Buffer.from('img'),
+        mimeType: 'image/jpeg',
+        meta: { userId, kind: 'photo' },
+      });
+      model.findOne.mockReturnValue(chain(storedActivity()));
+      const r = await svc.getPhotoForUser(userId, String(new Types.ObjectId()), String(fileId));
+      expect(r.mimeType).toBe('image/jpeg');
+      expect(model.findOne.mock.calls[0][0]).toMatchObject({
+        userId: new Types.ObjectId(userId),
+        'photos.fileId': fileId,
+      });
+    });
+    it('404s for another owner, an unknown photo, bad ids, or a missing file', async () => {
+      const { model, svc } = setup();
+      model.findOne.mockReturnValue(chain(null));
+      await expect(svc.getPhotoForUser(userId, String(new Types.ObjectId()), String(fileId))).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      await expect(svc.getPhotoForUser(userId, 'bad', String(fileId))).rejects.toBeInstanceOf(NotFoundException);
+      await expect(svc.getPhotoForUser(userId, String(new Types.ObjectId()), 'bad')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      model.findOne.mockReturnValue(chain(storedActivity()));
+      await expect(svc.getPhotoForUser(userId, String(new Types.ObjectId()), String(fileId))).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
   });
 
