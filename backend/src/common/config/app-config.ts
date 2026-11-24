@@ -52,10 +52,21 @@ const intIn = (env: Env, name: string, def: number, min: number, max: number, pr
 };
 
 /** Multer limits from UPLOAD_MAX_FILE_MB / UPLOAD_MAX_FILES (FR-021); invalid values fall back to defaults. */
-export function uploadLimits(env: Env): { fileSize: number; files: number } {
+export function uploadLimits(env: Env): {
+  fileSize: number;
+  files: number;
+  fieldSize: number;
+  fields: number;
+  parts: number;
+} {
+  const files = intIn(env, 'UPLOAD_MAX_FILES', 6, 1, 20);
   return {
     fileSize: intIn(env, 'UPLOAD_MAX_FILE_MB', 8, 1, 50) * 1024 * 1024,
-    files: intIn(env, 'UPLOAD_MAX_FILES', 6, 1, 20),
+    files,
+    // Text parts are capped too: only the small "data" JSON is expected (S1, FR-021).
+    fieldSize: 64 * 1024,
+    fields: 4,
+    parts: files + 4,
   };
 }
 

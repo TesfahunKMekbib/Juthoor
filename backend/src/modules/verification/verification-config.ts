@@ -1,4 +1,4 @@
-import { readNumber, type Env } from '../integration/ai/env.js';
+import { AiConfigError, readNumber, type Env } from '../integration/ai/env.js';
 import { validateThresholds, type Thresholds } from './decide-outcome.js';
 import type { RetryConfig } from './retry-policy.js';
 
@@ -22,5 +22,24 @@ export function parseVerificationConfig(env: Env): VerificationConfig {
       backoffBaseMs: readNumber(env, 'VERIFY_BACKOFF_BASE_MS', 30000, { min: 0, integer: true }),
     },
     pollMs: readNumber(env, 'VERIFY_POLL_MS', 2000, { min: 100, integer: true }),
+  };
+}
+
+export interface WorkerConfig {
+  /** VERIFY_WORKER=off disables the background worker (e.g. API-only instances or tests). Default on. */
+  enabled: boolean;
+  /** Lease on a claimed job; must exceed AI_TOTAL_BUDGET_MS (NFR-027, FR-028). */
+  leaseMs: number;
+  /** Max jobs one sweep processes. */
+  batchSize: number;
+}
+
+export function parseWorkerConfig(env: Env): WorkerConfig {
+  const flag = (env['VERIFY_WORKER']?.trim() || 'on').toLowerCase();
+  if (flag !== 'on' && flag !== 'off') throw new AiConfigError('VERIFY_WORKER must be "on" or "off"');
+  return {
+    enabled: flag === 'on',
+    leaseMs: readNumber(env, 'VERIFY_LEASE_MS', 60000, { min: 1000, integer: true }),
+    batchSize: readNumber(env, 'VERIFY_BATCH_SIZE', 5, { min: 1, max: 100, integer: true }),
   };
 }

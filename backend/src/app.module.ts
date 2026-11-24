@@ -4,6 +4,7 @@ import { devParticipantMode } from './common/config/dev-participant-mode.js';
 import { EventsModule } from './common/events/events.module.js';
 import { IdentityModule } from './common/identity/identity.module.js';
 import { ActivityModule } from './modules/activity/activity.module.js';
+import { VerificationModule } from './modules/verification/verification.module.js';
 
 @Module({})
 export class AppModule {
@@ -24,6 +25,7 @@ export class AppModule {
         IdentityModule.register(resolverModule),
         EventsModule,
         ActivityModule,
+        VerificationModule,
       ],
     };
   }

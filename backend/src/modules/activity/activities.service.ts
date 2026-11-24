@@ -31,6 +31,23 @@ type ActivityRecord = Activity & {
 };
 type TypeRecord = ActivityTypeRecord;
 
+/** Statuses from which verification may still decide (ADR-0005, FR-028). */
+export const WAITING_STATUSES = ['submitted', 'pending_technical_processing'] as const;
+export type DecidedStatus = 'accepted' | 'returned_for_correction' | 'rejected';
+
+export interface VerificationSubject {
+  id: string;
+  userId: string;
+  activityTypeId: string;
+  status: ActivityStatus;
+  description: string;
+  doneAt: Date;
+  answers: Record<string, string | number>;
+  amount: { value: number; unit: string };
+  photos: { fileId: Types.ObjectId; kind: string; mimeType: string }[];
+  emirate: string;
+}
+
 const MB = 1024 * 1024;
 const MAX_PHOTO_DIMENSION = 2560;
 
@@ -214,23 +231,108 @@ export class ActivitiesService {
     return this.toView(activity);
   }
 
-  /** Moves an activity to a final status, only if it is still waiting. Used by the checker. */
-  async decide(
-    activityId: Types.ObjectId,
-    to: Exclude<ActivityStatus, 'draft' | 'submitted'>,
-    reasonCode: string | null,
-  ) {
+  /**
+   * Moves an activity to a final status from submitted or pending_technical_processing. The update is
+   * conditional on the current status, so with several workers only the winning write returns a record
+   * and publishes events; losers get null (FR-015, FR-028). ActivityAccepted is published only for accepted
+   * (FR-032, FR-046). Reason codes are stored on the status history (plan section 4).
+   */
+  async decide(activityId: Types.ObjectId, to: DecidedStatus, reasonCode: string | null) {
     const now = new Date();
-    return this.activities
+    let record: ActivityRecord | null = null;
+    for (const from of WAITING_STATUSES) {
+      record = await this.activities
+        .findOneAndUpdate(
+          { _id: activityId, status: from },
+          {
+            $set: { status: to, resultReasonCode: reasonCode },
+            $push: { statusHistory: { from, to, reasonCode, at: now } },
+          },
+          { returnDocument: 'after' },
+        )
+        .lean<ActivityRecord>();
+      if (record) break;
+    }
+    if (!record) return null;
+    const id = String(record._id);
+    const userId = String(record.userId);
+    this.events.publish('ActivityDecided', { activityId: id, userId, status: to, reasonCode, decidedAt: now });
+    if (to === 'accepted') {
+      const type = await this.types.findById(String(record.activityTypeId)).catch(() => undefined);
+      if (type) {
+        this.events.publish('ActivityAccepted', {
+          activityId: id,
+          userId,
+          activityTypeCode: type.code,
+          category: type.category,
+          amount: { value: record.amount.value, unit: record.amount.unit },
+          doneAt: record.doneAt,
+        });
+      } else {
+        this.logger.error(`ActivityAccepted not published: type missing (activityId=${id})`);
+      }
+    }
+    return record;
+  }
+
+  /**
+   * Technical failure: the activity waits in pending_technical_processing (FR-028). From submitted it moves
+   * and records history once; if already pending only the reason code changes (retrying -> failedPermanently).
+   */
+  async markPending(activityId: Types.ObjectId, reasonCode: string) {
+    const now = new Date();
+    const moved = await this.activities
       .findOneAndUpdate(
         { _id: activityId, status: 'submitted' },
         {
-          $set: { status: to, resultReasonCode: reasonCode },
-          $push: { statusHistory: { from: 'submitted', to, reasonCode, at: now } },
+          $set: { status: 'pending_technical_processing', resultReasonCode: reasonCode },
+          $push: {
+            statusHistory: { from: 'submitted', to: 'pending_technical_processing', reasonCode, at: now },
+          },
         },
         { returnDocument: 'after' },
       )
       .lean<ActivityRecord>();
+    if (moved) return moved;
+    return this.activities
+      .findOneAndUpdate(
+        { _id: activityId, status: 'pending_technical_processing', resultReasonCode: { $ne: reasonCode } },
+        {
+          $set: { resultReasonCode: reasonCode },
+          $push: {
+            statusHistory: {
+              from: 'pending_technical_processing',
+              to: 'pending_technical_processing',
+              reasonCode,
+              at: now,
+            },
+          },
+        },
+        { returnDocument: 'after' },
+      )
+      .lean<ActivityRecord>();
+  }
+
+  /**
+   * What the verification worker needs. Internal use only (never an HTTP view): the emirate comes from the
+   * encrypted location; coordinates are never stored (NFR-004, NFR-007).
+   */
+  async getForVerification(activityId: string): Promise<VerificationSubject | null> {
+    if (!isValidObjectId(activityId)) return null;
+    const a = await this.activities.findOne({ _id: new Types.ObjectId(activityId) }).lean<ActivityRecord>();
+    if (!a) return null;
+    return {
+      id: String(a._id),
+      userId: String(a.userId),
+      activityTypeId: String(a.activityTypeId),
+      status: a.status,
+      description: a.description,
+      doneAt: a.doneAt,
+      answers: a.answers ?? {},
+      amount: { value: a.amount.value, unit: a.amount.unit },
+      photos: a.photos.map((p) => ({ fileId: p.fileId, kind: p.kind, mimeType: p.mimeType })),
+      emirate: this.decryptLocation(a)?.emirate ?? '',
+    };
   }
 
   findWaiting(submittedBefore: Date, limit = 20) {

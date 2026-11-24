@@ -70,7 +70,10 @@ describe('uploadLimits', () => {
     expect(uploadLimits({ UPLOAD_MAX_FILE_MB: '2', UPLOAD_MAX_FILES: '3' })).toEqual({
       fileSize: 2 * 1024 * 1024,
       files: 3,
+      fieldSize: 64 * 1024,
+      fields: 4,
+      parts: 7,
     });
-    expect(uploadLimits({ UPLOAD_MAX_FILE_MB: 'x' })).toEqual({ fileSize: 8 * 1024 * 1024, files: 6 });
+    expect(uploadLimits({ UPLOAD_MAX_FILE_MB: 'x' })).toMatchObject({ fileSize: 8 * 1024 * 1024, files: 6, parts: 10 });
   });
 });

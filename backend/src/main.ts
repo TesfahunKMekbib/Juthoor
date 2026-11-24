@@ -12,12 +12,13 @@ async function bootstrap(): Promise<void> {
   assertDevParticipantAllowed(process.env);
   assertAiProviderAllowed(process.env);
   const config = loadAppConfig(process.env);
-  parseAiConfig(process.env); // validation only; wiring the verification worker comes with B9b
+  parseAiConfig(process.env); // validation only; the modules build their own copy
   parseVerificationConfig(process.env);
 
   const app = await NestFactory.create(await AppModule.forRoot(process.env));
   app.setGlobalPrefix('api');
   app.useGlobalFilters(new ApiExceptionFilter());
+  app.enableShutdownHooks(); // stops the verification worker cleanly (FR-028)
   await app.listen(config.port);
 }
 

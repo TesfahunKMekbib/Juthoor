@@ -392,16 +392,82 @@ describe('ActivitiesService', () => {
   });
 
   describe('decide / findWaiting', () => {
-    it('only transitions from submitted', async () => {
-      const { model, svc } = setup();
-      model.findOneAndUpdate.mockReturnValue(chain(storedActivity({ status: 'accepted' })));
+    const decided = (over: Record<string, unknown> = {}) =>
+      storedActivity({ status: 'accepted', userId: new Types.ObjectId(), ...over });
+    it('decides from submitted, then from pending_technical_processing, with the reason code in history (FR-028)', async () => {
+      const { model, svc, publish } = setup();
+      model.findOneAndUpdate.mockReturnValueOnce(chain(null)).mockReturnValueOnce(chain(decided()));
       const id = new Types.ObjectId();
-      await svc.decide(id, 'accepted', 'ok');
+      const r = await svc.decide(id, 'accepted', null);
+      expect(r).not.toBeNull();
       expect(model.findOneAndUpdate.mock.calls[0][0]).toEqual({ _id: id, status: 'submitted' });
-      expect(model.findOneAndUpdate.mock.calls[0][1].$set).toEqual({
-        status: 'accepted',
-        resultReasonCode: 'ok',
+      expect(model.findOneAndUpdate.mock.calls[1][0]).toEqual({ _id: id, status: 'pending_technical_processing' });
+      expect(model.findOneAndUpdate.mock.calls[1][1].$push.statusHistory).toMatchObject({
+        from: 'pending_technical_processing',
+        to: 'accepted',
+        reasonCode: null,
       });
+      expect(publish.mock.calls.map((c) => c[0])).toEqual(['ActivityDecided', 'ActivityAccepted']);
+      expect(publish.mock.calls[1][1]).toMatchObject({ activityTypeCode: 'tree', category: 'planting' });
+    });
+    it('returns null and publishes nothing when another worker already decided (FR-015, FR-028)', async () => {
+      const { model, svc, publish } = setup();
+      model.findOneAndUpdate.mockReturnValue(chain(null));
+      expect(await svc.decide(new Types.ObjectId(), 'rejected', 'verification.evidenceUnrelated')).toBeNull();
+      expect(publish).not.toHaveBeenCalled();
+    });
+    it('publishes ActivityDecided but not ActivityAccepted for a non-accepted outcome (FR-046)', async () => {
+      const { model, svc, publish } = setup();
+      model.findOneAndUpdate.mockReturnValue(chain(decided({ status: 'rejected' })));
+      await svc.decide(new Types.ObjectId(), 'rejected', 'verification.evidenceUnrelated');
+      expect(publish.mock.calls.map((c) => c[0])).toEqual(['ActivityDecided']);
+      expect(publish.mock.calls[0][1]).toMatchObject({
+        status: 'rejected',
+        reasonCode: 'verification.evidenceUnrelated',
+      });
+    });
+    it('skips ActivityAccepted, logging only the id, when the type is gone', async () => {
+      const { model, svc, publish, types } = setup();
+      types.findById.mockRejectedValue(new Error('gone'));
+      model.findOneAndUpdate.mockReturnValue(chain(decided()));
+      await svc.decide(new Types.ObjectId(), 'accepted', null);
+      expect(publish.mock.calls.map((c) => c[0])).toEqual(['ActivityDecided']);
+    });
+    it('markPending moves submitted once, then only updates the reason code (FR-028)', async () => {
+      const { model, svc } = setup();
+      const id = new Types.ObjectId();
+      model.findOneAndUpdate.mockReturnValueOnce(chain(decided({ status: 'pending_technical_processing' })));
+      expect(await svc.markPending(id, 'processing.retrying')).not.toBeNull();
+      expect(model.findOneAndUpdate).toHaveBeenCalledTimes(1);
+      expect(model.findOneAndUpdate.mock.calls[0][0]).toEqual({ _id: id, status: 'submitted' });
+      model.findOneAndUpdate.mockReset();
+      model.findOneAndUpdate.mockReturnValueOnce(chain(null)).mockReturnValueOnce(chain(null));
+      expect(await svc.markPending(id, 'processing.failedPermanently')).toBeNull();
+      expect(model.findOneAndUpdate.mock.calls[1][0]).toEqual({
+        _id: id,
+        status: 'pending_technical_processing',
+        resultReasonCode: { $ne: 'processing.failedPermanently' },
+      });
+    });
+    it('getForVerification returns what the worker needs, with the emirate and no coordinates', async () => {
+      const { model, svc } = setup();
+      expect(await svc.getForVerification('nope')).toBeNull();
+      model.findOne.mockReturnValueOnce(chain(null));
+      expect(await svc.getForVerification(String(new Types.ObjectId()))).toBeNull();
+      model.findOne.mockReturnValueOnce(chain(storedActivity({ userId: new Types.ObjectId() })));
+      const r = await svc.getForVerification(String(new Types.ObjectId()));
+      expect(r).toMatchObject({ emirate: 'Dubai', status: 'submitted', amount: { value: 2, unit: 'trees' } });
+      expect(JSON.stringify(r)).not.toContain('Marina');
+      model.findOne.mockReturnValueOnce(
+        chain(
+          storedActivity({
+            userId: new Types.ObjectId(),
+            locationEnc: { v: 1, iv: 'x', tag: 'x', ct: 'x' },
+            answers: undefined,
+          }),
+        ),
+      );
+      expect((await svc.getForVerification(String(new Types.ObjectId())))?.emirate).toBe('');
     });
     it('finds waiting activities oldest first', async () => {
       const { model, svc } = setup();

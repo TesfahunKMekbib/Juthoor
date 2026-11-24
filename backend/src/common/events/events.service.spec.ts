@@ -59,3 +59,32 @@ describe('EventsService', () => {
     expect(() => new EventsService().publish('ActivitySubmitted', evt('a1'))).not.toThrow();
   });
 });
+
+describe('EventsService async handlers', () => {
+  it('logs an async rejection by event name and activityId only, never the payload', async () => {
+    const bus = new EventsService();
+    const logged: string[] = [];
+    jest
+      .spyOn((bus as unknown as { logger: { error: (m: string) => void } }).logger, 'error')
+      .mockImplementation((m: string) => void logged.push(m));
+    bus.subscribe('ActivitySubmitted', () => Promise.reject(new Error('secret-description')));
+    expect(() => bus.publish('ActivitySubmitted', evt('a9'))).not.toThrow();
+    await new Promise((r) => setImmediate(r));
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toContain('ActivitySubmitted');
+    expect(logged[0]).toContain('activityId=a9');
+    expect(logged[0]).not.toContain('secret-description');
+  });
+
+  it('runs an async handler to completion', async () => {
+    const bus = new EventsService();
+    let done = false;
+    bus.subscribe('ActivitySubmitted', async () => {
+      await Promise.resolve();
+      done = true;
+    });
+    bus.publish('ActivitySubmitted', evt('a1'));
+    await new Promise((r) => setImmediate(r));
+    expect(done).toBe(true);
+  });
+});
