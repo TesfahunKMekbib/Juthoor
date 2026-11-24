@@ -41,9 +41,16 @@ export class ModelError extends Error {
   constructor(
     readonly kind: ModelErrorKind,
     message?: string,
+    /** Optional stable coded detail (e.g. `provider.auth`, `provider.blocked`); never content. */
+    readonly code?: string,
   ) {
     super(message ?? `model error: ${kind}`);
     this.name = 'ModelError';
+  }
+
+  /** Transient kinds are retried by the job policy (FR-028); refusals, auth and invalid output are not transient. */
+  get retryable(): boolean {
+    return this.kind === 'unavailable' || this.kind === 'timeout';
   }
 }
 

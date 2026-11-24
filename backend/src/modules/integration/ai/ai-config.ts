@@ -1,4 +1,5 @@
 import { AiConfigError, readNumber, type Env } from './env.js';
+import { GeminiMultimodalModel } from './gemini/gemini-multimodal-model.js';
 import { MockMultimodalModel, type MockMode } from './mock-multimodal-model.js';
 import type { MultimodalModel } from './multimodal-model.js';
 import { TimeoutMultimodalModel } from './with-timeout.js';
@@ -69,13 +70,16 @@ export function parseAiConfig(env: Env): AiConfig {
   };
 }
 
-/** Provider factory (NFR-023). Real adapters are added by B7c; every model is wrapped with the timeout guard. */
+/** Provider factory (NFR-023). Every model is wrapped with the timeout guard. */
 export function createMultimodalModel(config: AiConfig): MultimodalModel {
   switch (config.provider) {
     case 'mock':
       return new TimeoutMultimodalModel(new MockMultimodalModel({ mode: config.mockMode, score: config.mockScore }));
     case 'gemini':
-      // TODO(B7c): return new TimeoutMultimodalModel(new GeminiMultimodalModel(...)).
-      throw new AiConfigError('AI_PROVIDER=gemini is not implemented yet');
+      if (!config.geminiApiKey || !config.model)
+        throw new AiConfigError('AI_PROVIDER=gemini requires GEMINI_API_KEY and AI_MODEL');
+      return new TimeoutMultimodalModel(
+        new GeminiMultimodalModel({ apiKey: config.geminiApiKey, model: config.model }),
+      );
   }
 }

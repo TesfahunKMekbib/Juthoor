@@ -68,9 +68,13 @@ describe('createMultimodalModel', () => {
     const model = createMultimodalModel(parseAiConfig({ AI_MOCK_MODE: 'unavailable' }));
     await expect(model.generate(req('evidence'))).rejects.toMatchObject({ kind: 'unavailable' });
   });
-  it('does not yet build gemini (B7c)', () => {
+  it('builds the gemini adapter when configured (B7c)', () => {
     const cfg = parseAiConfig({ AI_PROVIDER: 'gemini', GEMINI_API_KEY: 'k', AI_MODEL: 'm' });
-    expect(() => createMultimodalModel(cfg)).toThrow(AiConfigError);
+    expect(createMultimodalModel(cfg)).toBeDefined();
+  });
+  it('rejects a gemini config without key or model', () => {
+    const cfg = parseAiConfig({ AI_PROVIDER: 'gemini', GEMINI_API_KEY: 'k', AI_MODEL: 'm' });
+    expect(() => createMultimodalModel({ ...cfg, model: undefined })).toThrow(AiConfigError);
   });
 });
 
