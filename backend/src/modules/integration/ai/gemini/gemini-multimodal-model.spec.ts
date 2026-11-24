@@ -47,14 +47,15 @@ describe('GeminiMultimodalModel contract (NFR-023, AC 33)', () => {
     expect(body.systemInstruction.parts[0].text).toBe('sys');
     expect(body.contents[0].parts[0]).toEqual({ text: 'hello' });
     expect(body.contents[0].parts[1]).toEqual({
-      inline_data: { mime_type: 'image/jpeg', data: Buffer.from([1, 2, 3]).toString('base64') },
+      inlineData: { mimeType: 'image/jpeg', data: Buffer.from([1, 2, 3]).toString('base64') },
     });
     expect(body.generationConfig).toMatchObject({
       responseMimeType: 'application/json',
       maxOutputTokens: 321,
       temperature: 0,
     });
-    expect(body.generationConfig.responseSchema.type).toBe('OBJECT');
+    expect(body.generationConfig.responseJsonSchema.type).toBe('object');
+    expect(body.generationConfig.responseSchema).toBeUndefined();
     expect(body.tools).toBeUndefined();
     expect(init.body as string).not.toContain(KEY);
   });
@@ -164,15 +165,15 @@ describe('toGeminiSchema', () => {
         },
       }),
     ).toEqual({
-      type: 'OBJECT',
+      type: 'object',
       required: ['a'],
       properties: {
-        a: { type: 'ARRAY', items: { type: 'INTEGER', minimum: 0, maximum: 2 }, minItems: 1, maxItems: 2 },
-        b: { type: 'BOOLEAN' },
-        c: { type: 'STRING' },
-        d: { type: 'STRING', format: 'enum', enum: ['x'] },
-        e: { type: 'NUMBER', minimum: 0, maximum: 1 },
-        f: { type: 'ARRAY', items: { type: 'BOOLEAN' } },
+        a: { type: 'array', items: { type: 'integer', minimum: 0, maximum: 2 }, minItems: 1, maxItems: 2 },
+        b: { type: 'boolean' },
+        c: { type: 'string' },
+        d: { type: 'string', enum: ['x'] },
+        e: { type: 'number', minimum: 0, maximum: 1 },
+        f: { type: 'array', items: { type: 'boolean' } },
       },
     });
   });

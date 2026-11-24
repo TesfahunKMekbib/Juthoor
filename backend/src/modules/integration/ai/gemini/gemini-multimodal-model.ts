@@ -28,13 +28,13 @@ interface GeminiResponse {
 }
 
 /**
- * UNSURE-FIELD ISOLATION: request field names (`systemInstruction`, `inline_data`, `generationConfig.*`)
- * are built only in `buildBody`; response field names are read only in `interpret`.
+ * Gemini REST field names (checked against the generateContent API reference on 2026-11-25) are built
+ * only in `buildBody`; response field names are read only in `interpret`.
  */
 function toGeminiPart(part: ModelPart): Record<string, unknown> {
   return part.type === 'text'
     ? { text: part.text }
-    : { inline_data: { mime_type: part.mimeType, data: Buffer.from(part.data).toString('base64') } };
+    : { inlineData: { mimeType: part.mimeType, data: Buffer.from(part.data).toString('base64') } };
 }
 
 export function buildBody(request: GenerateRequest): Record<string, unknown> {
@@ -43,7 +43,7 @@ export function buildBody(request: GenerateRequest): Record<string, unknown> {
     contents: [{ role: 'user', parts: request.parts.map(toGeminiPart) }],
     generationConfig: {
       responseMimeType: 'application/json',
-      responseSchema: toGeminiSchema(request.responseSchema),
+      responseJsonSchema: toGeminiSchema(request.responseSchema),
       maxOutputTokens: request.maxTokens,
       temperature: 0,
     },
