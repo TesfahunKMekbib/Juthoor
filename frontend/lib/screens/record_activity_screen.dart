@@ -1,12 +1,12 @@
-
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import '../l10n/app_localizations.dart';
 
 class RecordActivityScreen extends StatefulWidget {
   const RecordActivityScreen({super.key});
 
   @override
-  State<RecordActivityScreen> createState() =>
-      _RecordActivityScreenState();
+  State<RecordActivityScreen> createState() => _RecordActivityScreenState();
 }
 
 class _RecordActivityScreenState extends State<RecordActivityScreen> {
@@ -16,6 +16,9 @@ class _RecordActivityScreenState extends State<RecordActivityScreen> {
   static const Color borderColor = Color(0xFF3A4A3F);
   static const Color mutedText = Color(0xFFA9B8AE);
 
+  // TODO(Q-A4): 'Transport' and 'Other' are not in the approved activity
+  // categories (FR-007). Kept for now by owner decision; see
+  // docs/open-questions.md Q-A4.
   final List<String> categories = [
     'Planting',
     'Recycling',
@@ -36,9 +39,43 @@ class _RecordActivityScreenState extends State<RecordActivityScreen> {
     'Other': ['Approved activity'],
   };
 
+  // Internal ids stay stable; display text comes from AppLocalizations.
+  String categoryLabel(AppLocalizations l10n, String id) => switch (id) {
+        'Planting' => l10n.categoryPlanting,
+        'Recycling' => l10n.categoryRecycling,
+        'Clean-up' => l10n.categoryCleanup,
+        'Water' => l10n.categoryWater,
+        'Energy' => l10n.categoryEnergy,
+        'Transport' => l10n.categoryTransport,
+        _ => l10n.categoryOther,
+      };
+
+  String typeText(AppLocalizations l10n, String id) => switch (id) {
+        'Ghaf seedling' => l10n.typeGhafSeedling,
+        'Tree sapling' => l10n.typeTreeSapling,
+        'Smart RVM' => l10n.typeSmartRvm,
+        'Home recycling' => l10n.typeHomeRecycling,
+        'Beach' => l10n.typeBeach,
+        'Park' => l10n.typePark,
+        'Reduced usage' => l10n.typeReducedUsage,
+        'Leak repair' => l10n.typeLeakRepair,
+        'AC setpoint' => l10n.typeAcSetpoint,
+        'LED switch' => l10n.typeLedSwitch,
+        'Metro' => l10n.typeMetro,
+        'Bus' => l10n.typeBus,
+        'Cycling' => l10n.typeCycling,
+        _ => l10n.typeApprovedActivity,
+      };
+
+  String linkText(AppLocalizations l10n, String id) => switch (id) {
+        'team' => l10n.linkTeam,
+        'challenge' => l10n.linkChallenge,
+        _ => l10n.linkNone,
+      };
+
   String selectedCategory = 'Planting';
   String selectedType = 'Ghaf seedling';
-  String selectedLink = 'None. Record on its own';
+  String selectedLink = 'none';
 
   final quantityController = TextEditingController();
   DateTime selectedDate = DateTime.now();
@@ -134,7 +171,7 @@ class _RecordActivityScreenState extends State<RecordActivityScreen> {
         final selected = selectedCategory == category;
 
         return ChoiceChip(
-          label: Text(category),
+          label: Text(categoryLabel(AppLocalizations.of(context), category)),
           selected: selected,
           showCheckmark: false,
           onSelected: (_) => changeCategory(category),
@@ -156,7 +193,7 @@ class _RecordActivityScreenState extends State<RecordActivityScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        sectionLabel('Type'),
+        sectionLabel(AppLocalizations.of(context).typeLabel),
         DropdownButtonFormField<String>(
           initialValue: selectedType,
           dropdownColor: cardColor,
@@ -165,7 +202,7 @@ class _RecordActivityScreenState extends State<RecordActivityScreen> {
               .map(
                 (type) => DropdownMenuItem(
                   value: type,
-                  child: Text(type),
+                  child: Text(typeText(AppLocalizations.of(context), type)),
                 ),
               )
               .toList(),
@@ -180,29 +217,30 @@ class _RecordActivityScreenState extends State<RecordActivityScreen> {
   }
 
   Widget buildQuantityField() {
+    final l10n = AppLocalizations.of(context);
     String label;
 
     switch (selectedCategory) {
       case 'Planting':
-        label = 'Number planted';
+        label = l10n.quantityPlanting;
         break;
       case 'Recycling':
-        label = 'Weight in kg';
+        label = l10n.quantityRecycling;
         break;
       case 'Clean-up':
-        label = 'Bags collected';
+        label = l10n.quantityCleanup;
         break;
       case 'Water':
-        label = 'Litres saved';
+        label = l10n.quantityWater;
         break;
       case 'Energy':
-        label = 'kWh saved';
+        label = l10n.quantityEnergy;
         break;
       case 'Transport':
-        label = 'Trips';
+        label = l10n.quantityTransport;
         break;
       default:
-        label = 'Description';
+        label = l10n.quantityOther;
     }
 
     return Column(
@@ -227,7 +265,7 @@ class _RecordActivityScreenState extends State<RecordActivityScreen> {
       onTap: () {
         // Placeholder until image_picker is integrated.
         setState(() => photoAdded = true);
-        showMessage('Photo marked as added (demo only)');
+        showMessage(AppLocalizations.of(context).photoDemoMessage);
       },
       borderRadius: BorderRadius.circular(12),
       child: Container(
@@ -239,25 +277,27 @@ class _RecordActivityScreenState extends State<RecordActivityScreen> {
         ),
         child: Row(
           children: [
-            const Expanded(
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Photo of planting',
-                    style: TextStyle(
+                    AppLocalizations.of(context).photoOfPlanting,
+                    style: const TextStyle(
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                   Text(
-                    'Required',
-                    style: TextStyle(color: mutedText),
+                    AppLocalizations.of(context).required,
+                    style: const TextStyle(color: mutedText),
                   ),
                 ],
               ),
             ),
             Text(
-              photoAdded ? 'Added ✓' : 'Add photo',
+              photoAdded
+                  ? AppLocalizations.of(context).photoAddedLabel
+                  : AppLocalizations.of(context).addPhoto,
               style: const TextStyle(
                 color: primaryGreen,
                 fontWeight: FontWeight.w600,
@@ -273,7 +313,7 @@ class _RecordActivityScreenState extends State<RecordActivityScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        sectionLabel('Location (required)'),
+        sectionLabel(AppLocalizations.of(context).locationRequiredLabel),
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(12),
@@ -281,10 +321,9 @@ class _RecordActivityScreenState extends State<RecordActivityScreen> {
             color: const Color(0xFF1C3326),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: const Text(
-            'Using your current location · Dubai. '
-            'Location blocked?',
-            style: TextStyle(fontSize: 13),
+          child: Text(
+            AppLocalizations.of(context).locationNotice,
+            style: const TextStyle(fontSize: 13),
           ),
         ),
       ],
@@ -292,16 +331,15 @@ class _RecordActivityScreenState extends State<RecordActivityScreen> {
   }
 
   Widget buildDateTime() {
+    final localeName = Localizations.localeOf(context).toString();
     final dateText =
-        '${selectedDate.month.toString().padLeft(2, '0')}/'
-        '${selectedDate.day.toString().padLeft(2, '0')}/'
-        '${selectedDate.year}  '
+        '${DateFormat('MM/dd/yyyy', localeName).format(selectedDate)}  '
         '${TimeOfDay.fromDateTime(selectedDate).format(context)}';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        sectionLabel('Date and time'),
+        sectionLabel(AppLocalizations.of(context).dateAndTime),
         InkWell(
           onTap: selectDateTime,
           child: Container(
@@ -330,19 +368,23 @@ class _RecordActivityScreenState extends State<RecordActivityScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        sectionLabel('Link to (optional)'),
+        sectionLabel(AppLocalizations.of(context).linkToOptional),
         DropdownButtonFormField<String>(
           initialValue: selectedLink,
+          isExpanded: true,
           dropdownColor: cardColor,
           decoration: fieldDecoration(),
           items: [
-            'None. Record on its own',
-            'Team: Dubai Greens',
-            'Challenge: Metro Month',
+            'none',
+            'team',
+            'challenge',
           ].map((item) {
             return DropdownMenuItem(
               value: item,
-              child: Text(item),
+              child: Text(
+                linkText(AppLocalizations.of(context), item),
+                overflow: TextOverflow.ellipsis,
+              ),
             );
           }).toList(),
           onChanged: (value) {
@@ -361,7 +403,7 @@ class _RecordActivityScreenState extends State<RecordActivityScreen> {
         Expanded(
           child: OutlinedButton(
             onPressed: () {
-              showMessage('Draft saved (demo only)');
+              showMessage(AppLocalizations.of(context).draftSavedDemo);
             },
             style: OutlinedButton.styleFrom(
               minimumSize: const Size(0, 52),
@@ -370,9 +412,9 @@ class _RecordActivityScreenState extends State<RecordActivityScreen> {
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            child: const Text(
-              'Save draft',
-              style: TextStyle(color: Colors.white),
+            child: Text(
+              AppLocalizations.of(context).saveDraft,
+              style: const TextStyle(color: Colors.white),
             ),
           ),
         ),
@@ -381,16 +423,17 @@ class _RecordActivityScreenState extends State<RecordActivityScreen> {
           child: ElevatedButton(
             onPressed: () {
               if (quantityController.text.trim().isEmpty) {
-                showMessage('Please enter the activity quantity.');
+                showMessage(AppLocalizations.of(context).enterQuantityMessage);
                 return;
               }
 
               if (!photoAdded) {
-                showMessage('Please add the required photo.');
+                showMessage(
+                    AppLocalizations.of(context).addRequiredPhotoMessage);
                 return;
               }
 
-              showMessage('Ready for review');
+              showMessage(AppLocalizations.of(context).readyForReview);
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: primaryGreen,
@@ -400,7 +443,7 @@ class _RecordActivityScreenState extends State<RecordActivityScreen> {
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            child: const Text('Review'),
+            child: Text(AppLocalizations.of(context).review),
           ),
         ),
       ],
@@ -414,9 +457,9 @@ class _RecordActivityScreenState extends State<RecordActivityScreen> {
       appBar: AppBar(
         backgroundColor: background,
         foregroundColor: Colors.white,
-        title: const Text(
-          'Record an activity',
-          style: TextStyle(
+        title: Text(
+          AppLocalizations.of(context).recordActivityTitle,
+          style: const TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.bold,
           ),
@@ -445,10 +488,9 @@ class _RecordActivityScreenState extends State<RecordActivityScreen> {
                   const SizedBox(height: 14),
                   buildLinkField(),
                   const SizedBox(height: 12),
-                  const Text(
-                    'Each accepted activity counts once toward '
-                    'its challenge and totals.',
-                    style: TextStyle(
+                  Text(
+                    AppLocalizations.of(context).acceptedOnceNote,
+                    style: const TextStyle(
                       color: mutedText,
                       fontSize: 12,
                     ),
