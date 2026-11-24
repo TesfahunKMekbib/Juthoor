@@ -14,13 +14,18 @@ module.exports = {
   testPathIgnorePatterns: ['/node_modules/', '/dist/'],
   extensionsToTreatAsEsm: ['.ts'],
   transform: {
-    '^.+\\.ts$': [
-      'ts-jest',
-      { useESM: true, tsconfig: 'tsconfig.json', diagnostics: { ignoreCodes: [151002] } },
-    ],
+    '^.+\\.ts$': ['ts-jest', { useESM: true, tsconfig: 'tsconfig.json', diagnostics: { ignoreCodes: [151002] } }],
   },
   // Source imports use ESM-style ".js" extensions; map them back to the .ts files.
   moduleNameMapper: { '^(\\.{1,2}/.*)\\.js$': '$1' },
+  collectCoverageFrom: [
+    'src/modules/**/*.ts',
+    'src/common/**/*.ts',
+    '!**/*.spec.ts',
+    '!**/*.module.ts',
+    '!**/*.schema.ts',
+    '!**/dto/**',
+  ],
   coverageDirectory: 'coverage',
   coverageReporters: ['text-summary', 'lcov', 'json-summary'],
   coverageThreshold: { global: { branches: 80 } },
