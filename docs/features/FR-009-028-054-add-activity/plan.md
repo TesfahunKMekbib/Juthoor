@@ -68,23 +68,45 @@ Verify (async, Verification domain, AI only after rules pass, FR-018):
 1. `ActivitySubmitted` → insert `verificationJobs` (unique `activityId`, idempotent) and try immediately.
    Sweeper every `VERIFY_POLL_MS` claims due jobs (`findOneAndUpdate` with `lockedUntil` lease → safe with N
    instances, NFR-027) and re-enqueues submitted activities lacking a job (`ActivitiesService.findWaiting`).
-2. `EvidenceAssessor.assess({ photos, activityType, description })` → `{ score 0..1, flags[], modelVersion,
-   providerId }` with `AI_TIMEOUT_MS`. Interface in `modules/integration/ai/`; `AI_PROVIDER=mock` default;
-   `MockEvidenceAssessor` modes `fixed` (score `AI_MOCK_SCORE`), `scripted` (tests), `unavailable` (FR-028 demo).
-3. Error/timeout → `ActivitiesService.markPending(id, 'processing.retrying')`; `nextAttemptAt = now +
+2. `VerificationAgent.run(evidence)` (ADR-0012, `modules/verification/agent/`) over the `MultimodalModel` port
+   (`modules/integration/ai/`, `generate({requestTag, system, parts, responseSchema, maxTokens, timeoutMs}) →
+   {json, modelVersion, providerId, usage}`, typed `ModelError`; `AI_PROVIDER=mock` default | `gemini` — Google Gemini
+   API, paid, `integration/ai/gemini/` via built-in `fetch`, no SDK; `AI_MODEL`, `GEMINI_API_KEY` from env). Boot
+   fails if `AI_PROVIDER != mock` and `NODE_ENV=production` (privacy review first, NFR-009). Input: sanitized, downscaled photos (`AI_IMAGE_MAX_PX`, re-encoded) + kinds, type rules
+   and evidence criteria, description, answers, amount/unit, `doneAt` date, emirate — never coordinates or user ids.
+   Steps: ① `evidence` (1 call, per-photo relevance/quality/criteria/flags/confidence) → ② `claim` (1 call,
+   amount plausibility, FR-011 before/after, description and date match) → ③ `followup` (≤ 1 call, only on
+   confidence < `AI_FOLLOWUP_BELOW` or conflict) → ④ pure `aggregate()` → `{score, flags[]}` → returns
+   `{score, flags, steps[{tag, modelVersion, providerId}], callCount, promptVersion, schemaVersion, aggregationVersion}`.
+   Each response is checked by a pure schema validator (enums/numbers only); invalid → one repair call; still
+   invalid → `ModelError(invalid_output)`. Guards: `AI_MAX_CALLS`, `AI_TOTAL_BUDGET_MS`, per call
+   `min(AI_TIMEOUT_MS, remaining)`, skip repair/follow-up below `AI_MIN_CALL_MS`, `AI_MAX_OUTPUT_TOKENS`.
+   Participant text is JSON-quoted untrusted data; photo text is ignored and flagged. Hard flags cap the score
+   below accept; `people_visible` never changes the outcome. Mock (`MockMultimodalModel`, keyed by `requestTag`)
+   modes `fixed` (aggregates to `AI_MOCK_SCORE`), `scripted`, `unavailable`, `malformed`.
+3. `ModelError` (any kind), budget exhausted or invalid output after repair → never a decision →
+   `ActivitiesService.markPending(id, 'processing.retrying')`; `nextAttemptAt = now +
    VERIFY_BACKOFF_BASE_MS·2^(n−1)`; after `VERIFY_MAX_ATTEMPTS` → job `exhausted`, reason
    `processing.failedPermanently` (Q-E4).
 4. Success → pure `decideOutcome(score, thresholds)` (Q-E2) → `ActivitiesService.decide()` (conditional on
    status ∈ {submitted, pending_technical_processing}; only the winning write continues) → audit append →
    publish `ActivityDecided` and, if accepted, `ActivityAccepted` → job `done`.
    AI output is advisory (FR-025): stored as score + flags, never shown as "verified"/"proof".
+   Extends §4: `verificationJobs.result` and the `verification.decision` audit entry also carry `providerId`,
+   per-step `modelVersion`, `promptVersion`, `schemaVersion`, `aggregationVersion`, `callCount`; one
+   `verification.aiFlag` entry per flag (`flagCode` `ai.<flag>`). IDs/codes only, no photo, text or model
+   output (ADR-0008). New config (validated at boot): `AI_MOCK_MODE` adds `malformed`; `AI_MAX_CALLS=5`,
+   `AI_TOTAL_BUDGET_MS=24000`, `AI_MIN_CALL_MS=3000`, `AI_FOLLOWUP_BELOW=0.5`, `AI_IMAGE_MAX_PX=1024`,
+   `AI_MAX_OUTPUT_TOKENS=800`; `AI_TIMEOUT_MS` is per call, capped by the remaining budget; `AI_MODEL` and
+   `GEMINI_API_KEY` (placeholder only in `.env.example`, required when `AI_PROVIDER=gemini`).
 Thresholds `AI_ACCEPT_THRESHOLD` > `AI_REJECT_THRESHOLD` in [0,1], validated at boot (FR-022 admin UI deferred).
 `EventsService.subscribe` gains async-handler support (awaits and logs rejections by `activityId` only).
 
-**Live AI provider (Q-C3) — owner decides:** provider/model; where photos are processed and the data-processing
-terms (photos may show faces/homes; FR-024 blurring deferred, so decide whether unblurred photos may leave the
-platform); cost per call; latency vs NFR-002 (30 s); pinned model version; score calibration → threshold values;
-credential handling. Everything in this plan is buildable and demo-able on the mock before that.
+**Live AI provider (Q-C3) — owner decided Google Gemini (paid) for non-production (ADR-0012).** Still open before
+production: privacy review of the data-processing terms (retention, training use, region; photos may show
+faces/homes; FR-024 blurring deferred) and a new ADR lifting the production guard; cost (2–5 calls per attempt);
+latency vs NFR-002 (30 s); which Gemini model id to set in `AI_MODEL`; score/aggregation calibration → thresholds.
+Everything in this plan is buildable and demo-able on the mock; tests never use the network.
 
 ## 4. Data model (each domain owns its collection)
 | Collection (domain) | Change | Index → FR |
@@ -132,15 +154,17 @@ then live status). Worst case counting the system camera: Home→Form→Camera�
 | Q2 | qa | widget flow: AC 13, 20, 21 | F3 | S | 11 |
 | S1 | security | review slice 1: dev guarantees, uploads, crypto, logs, ownership | Q1 | — | review.md |
 | **Slice 2** | | | | | |
-| B7 | backend | `integration/ai`: `EvidenceAssessor`, mock (3 modes), provider factory, timeout | — | M | 12 |
+| B7a | backend | `integration/ai`: `MultimodalModel` port + `ModelError`, provider factory (`AI_PROVIDER`), `MockMultimodalModel` (fixed/scripted/unavailable/malformed by `requestTag`), timeout wrapper, `image-prep.ts` downscale (sharp), config validation + production guard (`AI_PROVIDER != mock` + `NODE_ENV=production` → boot fails, unit-tested, AC 32) (ADR-0012) | — | M | 12a |
+| B7c | backend, security | `integration/ai/gemini/` adapter on built-in `fetch` (REST, no SDK): request mapping (text/image parts, response schema, temperature 0, no tools), `AI_MODEL`, `GEMINI_API_KEY`, error → `ModelError` kinds; contract tests on recorded/fake HTTP responses, no real network | B7a | M | 12d |
+| B7b | backend | `verification/agent`: PR 12b pure parts — `prompts/*.ts` + `PROMPT_VERSION`, prompt builder (quoted untrusted data), step schemas + pure validator, `aggregate()`, follow-up trigger, budget calc (unit tests, AC 25–31); PR 12c `VerificationAgent` runner (steps, repair, budget, follow-up) tested on the mock | B7a (12b may start in parallel: uses only the port types fixed in §3) | M+M | 12b, 12c |
 | B8 | backend | `modules/audit`: append-only service, idempotent append | — | S | 13 |
 | B10 | backend | `decide` from pending, `markPending`, reason codes, new events, async subscribe | B2 | M | 14 |
-| B9a | backend | pure `decideOutcome` + `retryPolicy` (**BLOCKED Q-E2, Q-E4**) | — | S | 14 |
-| B9b | backend | `modules/verification`: jobs schema, enqueue, worker/lease, sweeper, audit, events | B5 B7 B8 B9a B10 | L | 15 |
+| B9a | backend | pure `decideOutcome(score from aggregate())` + `retryPolicy` (Q-E2, Q-E4 decided); `ModelError` / invalid output → retry, never a decision | — | S | 14 |
+| B9b | backend | `modules/verification`: jobs schema (+ agent metadata), enqueue, worker/lease calling `VerificationAgent`, sweeper, audit (decision + one entry per flag, versions, call count), events | B5 B7b B8 B9a B10 | L | 15 |
 | F5 | flutter | status screen: all states, reason codes, polling, advisory copy | F4 | S | 16 |
 | Q3 | qa | e2e on mock: AC 14–18, 24; outage → pending → retry → accepted | B9b | M | 17 |
 | S2 | security | review slice 2: audit content, provider data, logs | Q3 | — | review.md |
-**Parallel** (contract fixed by this plan, disjoint files): B1 ‖ B2 ‖ B3+B4a ‖ B4b ‖ B7 ‖ B8 ‖ B9a ‖ F1 from day one;
+**Parallel** (contract fixed by this plan, disjoint files): B1 ‖ B2 ‖ B3+B4a ‖ B4b ‖ B7a ‖ B7b(12b) ‖ B8 ‖ B9a ‖ F1 from day one (then B7c ‖ B7b(12c) after B7a);
 then F2 ‖ F4 ‖ B5; B6 ‖ Q1. Sequential: anything touching `activities.service.ts` (B5 → B10 → B9b) and
 `record_activity_screen.dart` (F2 → F3). `/document` updates `docs/traceability.md` rows (paths there are stale) per PR.
 **New packages:** backend `sharp`; Flutter `http`, `provider`, `image_picker`, `geolocator`, `http_parser` (ADR-0011).

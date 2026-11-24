@@ -103,7 +103,7 @@ Decision: client offline functionality deferred; server-side Pending Technical P
 ### Q-C3 — AI provider for verification (FR-025) and blurring (FR-024)
 Status: decided (interface) · Owner: team
 Decision: provider-independent AI interface in the integration module, mock provider for tests;
-concrete provider still TBD — choose before production use (ADR-0007, 2026-11-25).
+Update (owner, 2026-11-25, ADR-0012): first real engine is Google Gemini, enabled only outside production (boot fails if AI_PROVIDER != mock with NODE_ENV=production). Production provider stays open pending a privacy review (FR-024 blurring deferred, NFR-009).
 
 ### Q-C4 — Hosting / deployment target
 Status: decided (deferred) · Owner: team
