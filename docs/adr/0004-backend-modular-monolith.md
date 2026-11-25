@@ -1,6 +1,6 @@
 # ADR-0004: Backend is a NestJS modular monolith with domain modules
 
-- Status: accepted (approved by project owner 2026-11-25)
+- Status: superseded by ADR-0013 (2026-11-25)
 - Date: 2026-11-25
 
 ## Context
