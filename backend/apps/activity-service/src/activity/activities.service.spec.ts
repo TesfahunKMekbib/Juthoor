@@ -2,10 +2,10 @@ import { jest } from '@jest/globals';
 import sharp from 'sharp';
 import { BadRequestException, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { Types } from 'mongoose';
-import { createLocationCipher } from '../../../libs/common/config/app-config.js';
-import { EventsService } from '../../../libs/common/events/events.service.js';
-import { SharpEvidenceSanitizer } from '../../../libs/integration/image/sharp-evidence-sanitizer.js';
-import { InMemoryPhotoStorage } from '../../../libs/integration/storage/in-memory-photo-storage.js';
+import { createLocationCipher } from '../../../../libs/common/config/app-config.js';
+import { EventsService } from '../../../../libs/common/events/events.service.js';
+import { SharpEvidenceSanitizer } from '../../../../libs/integration/image/sharp-evidence-sanitizer.js';
+import { InMemoryPhotoStorage } from '../../../../libs/integration/storage/in-memory-photo-storage.js';
 import { ActivitiesService } from './activities.service.js';
 
 // Loosely typed mock factory so tests can set any return value.

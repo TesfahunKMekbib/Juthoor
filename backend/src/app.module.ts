@@ -3,8 +3,8 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { devParticipantMode } from '../libs/common/config/dev-participant-mode.js';
 import { EventsModule } from '../libs/common/events/events.module.js';
 import { IdentityModule } from '../libs/common/identity/identity.module.js';
-import { ActivityModule } from './modules/activity/activity.module.js';
-import { VerificationModule } from './modules/verification/verification.module.js';
+import { ActivityModule } from '../apps/activity-service/src/activity/activity.module.js';
+import { VerificationModule } from '../apps/verification-service/src/verification/verification.module.js';
 
 @Module({})
 export class AppModule {

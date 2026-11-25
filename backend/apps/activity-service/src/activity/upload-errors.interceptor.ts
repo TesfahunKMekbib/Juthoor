@@ -6,7 +6,7 @@ import {
   type NestInterceptor,
 } from '@nestjs/common';
 import { catchError, type Observable, throwError } from 'rxjs';
-import { ValidationFailedException } from '../../../libs/common/errors/validation-failed.exception.js';
+import { ValidationFailedException } from '../../../../libs/common/errors/validation-failed.exception.js';
 
 /** Message multer's "too many files" error carries once Nest has turned it into an HTTP exception. */
 export const TOO_MANY_FILES_MESSAGE = 'Too many files';

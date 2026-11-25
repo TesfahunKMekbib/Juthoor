@@ -19,7 +19,7 @@ module.exports = {
   // Source imports use ESM-style ".js" extensions; map them back to the .ts files.
   moduleNameMapper: { '^(\\.{1,2}/.*)\\.js$': '$1' },
   collectCoverageFrom: [
-    'src/modules/**/*.ts',
+    'apps/**/*.ts',
     'libs/**/*.ts',
     '!**/*.spec.ts',
     '!**/*.module.ts',

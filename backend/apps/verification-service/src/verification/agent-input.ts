@@ -1,5 +1,5 @@
-import type { VerificationSubject } from '../activity/activities.service.js';
-import type { ActivityTypeRecord } from '../activity/activity-types.service.js';
+import type { VerificationSubject } from '../../../activity-service/src/activity/activities.service.js';
+import type { ActivityTypeRecord } from '../../../activity-service/src/activity/activity-types.service.js';
 import type { AgentInput } from './agent/prompts/index.js';
 
 /**
