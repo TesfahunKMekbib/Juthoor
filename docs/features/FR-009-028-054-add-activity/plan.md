@@ -178,3 +178,59 @@ The owner approves by deciding:
 4. Q-A4b: hide Transport/Other (recommended) or show disabled; removal of "Save draft" / "Link to" (Q-E7).
 5. Q-E7: FR-010 drafts and FR-027 replacement evidence deferred (optional Slice 3), FR-024 stays deferred.
 Not blocking: Q-C3 live provider (list in §3), Q-A6b retention (no TTL created).
+
+## Implementation notes (2026-11-25, `/document`; verified against the code on branch `feat/FR-009-028-054-add-activity`)
+Deviations from / clarifications of the plan above (backend paths relative to `backend/src/`):
+- Statuses are the ADR-0005 set (`modules/activity/activity.schema.ts`, `draft` present but unused); location persisted only as `locationEnc`.
+- Deterministic FR-018–021 failures → `422`, no record created (Q-E3; `ValidationFailedException` thrown before `create`).
+- Multer: `FilesInterceptor('photos')`, `fieldSize` 64 KiB, `fields` 4, `parts` = files + 4 (`common/config/app-config.ts` `uploadLimits`).
+- Extra codes beyond §1: `photos.unexpectedField`, `request.malformed` (400), `request.idempotencyKeyMissing` (400),
+  `upload.tooLarge` (413), `answers.invalidChoice`, `answers.notNumber`; app-only `network.unavailable` (`frontend/lib/services/api_exception.dart`).
+- Real AI provider allowed only when `NODE_ENV` is exactly `development` or `test` (stricter than "not production";
+  `assertAiProviderAllowed` in `integration/ai/ai-config.ts`). `gemini` requires both `GEMINI_API_KEY` and `AI_MODEL`.
+- Gemini adapter: REST via `fetch`, `generationConfig.responseJsonSchema`, images as `inlineData` (base64); no SDK.
+- Worker settings added: `VERIFY_WORKER`, `VERIFY_LEASE_MS` (must be ≥ `AI_TOTAL_BUDGET_MS` + 30 s), `VERIFY_BATCH_SIZE`; also `AI_MAX_IMAGES`.
+- Every technical failure, including non-transient refusals (`provider.blocked`, `provider.auth`, …), goes through
+  `retryPolicy` → retry → `exhausted` (Q-E4); none is mapped to Returned for Correction.
+- No evidence-criteria field exists on activity types: the agent uses the type's English `description` as its single
+  criterion (`verification/agent-input.ts`). A real criteria list would need a requirement/schema change.
+- Geo dataset (`integration/geo/data/uae-adm1.json`, `ATTRIBUTION.md`): geoBoundaries metadata lists the source as
+  OpenStreetMap under ODbL 1.0, not CC BY 4.0 — owner to confirm (Q-E6).
+- `npm run test:e2e` (`jest.e2e.config.cjs`, needs MongoDB) is separate from `npm test`; CI does not run it yet (Q-E8).
+- `npm run build` (`scripts/build.mjs`) runs tsc and copies `src/**/data/*.json` (geo dataset) into `dist/`.
+- `dist/src/dev` is still compiled (no Dockerfile yet, so "prod image deletes `dist/src/dev`" is not implemented);
+  the runtime guard (`common/config/dev-participant-mode.ts`) refuses the dev participant outside `development`.
+- `backend/.env.example` not written (permission rules block it, Q-E9); the table below stands in for it.
+
+### Configuration (env vars; read at boot, invalid values fail boot unless noted)
+| Variable | Default | Purpose | Source |
+|---|---|---|---|
+| `NODE_ENV` | (unset) | `development` enables the dev participant; `development`/`test` allow a real AI provider | app-config.ts, ai-config.ts |
+| `PORT` | 3000 | HTTP port (1–65535) | app-config.ts |
+| `MONGODB_URI` | `mongodb://localhost:27017/juthoor` | MongoDB connection | app-config.ts, app.module.ts |
+| `LOCATION_ENCRYPTION_KEY` | required | 32-byte AES-256-GCM key (64 hex or base64) for `locationEnc` (NFR-004) | app-config.ts |
+| `JUTHOOR_DEV_PARTICIPANT` | (unset) | `true`/`false`; `true` only with `NODE_ENV=development` (ADR-0010) | app-config.ts, dev-participant-mode.ts |
+| `UPLOAD_MAX_FILE_MB` | 8 | Per-photo size cap, 1–50 (FR-021) | app-config.ts |
+| `UPLOAD_MAX_FILES` | 6 | Photos per submission, 1–20 (FR-021) | app-config.ts |
+| `AI_PROVIDER` | `mock` | `mock` \| `gemini` (NFR-023) | ai-config.ts |
+| `AI_MOCK_MODE` | `fixed` | `fixed` \| `scripted` \| `unavailable` \| `malformed` | ai-config.ts |
+| `AI_MOCK_SCORE` | 0.85 | Score the `fixed` mock aggregates to, 0–1 | ai-config.ts |
+| `AI_MODEL` | (unset) | Gemini model id; required for `gemini` | ai-config.ts |
+| `GEMINI_API_KEY` | (unset) | Secret; required for `gemini`; never logged | ai-config.ts |
+| `AI_TIMEOUT_MS` | 20000 | Per-call timeout, capped by remaining budget | ai-config.ts |
+| `AI_MAX_CALLS` | 5 | Model calls per attempt, 1–20 | ai-config.ts |
+| `AI_TOTAL_BUDGET_MS` | 24000 | Time budget per attempt (NFR-002) | ai-config.ts, verification-config.ts |
+| `AI_MIN_CALL_MS` | 3000 | Skip repair/follow-up below this remaining time | ai-config.ts |
+| `AI_FOLLOWUP_BELOW` | 0.5 | Confidence that triggers the follow-up step | ai-config.ts |
+| `AI_IMAGE_MAX_PX` | 1024 | Downscale bound for AI images, 64–4096 | ai-config.ts |
+| `AI_MAX_IMAGES` | 6 | Images sent per attempt, 1–20 | ai-config.ts |
+| `AI_MAX_OUTPUT_TOKENS` | 800 | Output token cap per call | ai-config.ts |
+| `AI_ACCEPT_THRESHOLD` | 0.70 | score ≥ → Accepted (FR-026, Q-E2) | verification-config.ts |
+| `AI_REJECT_THRESHOLD` | 0.30 | score < → Rejected; must be < accept (FR-027, Q-E2) | verification-config.ts |
+| `VERIFY_MAX_ATTEMPTS` | 5 | Attempts before `exhausted` (Q-E4) | verification-config.ts |
+| `VERIFY_BACKOFF_BASE_MS` | 30000 | Backoff base, doubles per attempt | verification-config.ts |
+| `VERIFY_POLL_MS` | 2000 | Sweeper interval, ≥ 100 | verification-config.ts |
+| `VERIFY_WORKER` | `on` | `on`/`off` background worker | verification-config.ts |
+| `VERIFY_LEASE_MS` | 60000 | Job lease; ≥ `AI_TOTAL_BUDGET_MS` + 30000 (NFR-027) | verification-config.ts |
+| `VERIFY_BATCH_SIZE` | 5 | Jobs per sweep, 1–100 | verification-config.ts |
+Note: `uploadLimits` (multer) silently falls back to defaults on invalid upload values; `loadAppConfig` reports them as boot errors.

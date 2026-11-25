@@ -147,11 +147,28 @@ FR-011 before/after meter readings? Recommendation: the participant enters the a
 required numeric fields; no derived-quantity rule is added (that would be a new requirement).
 
 ### Q-E6 — UAE / emirate boundary data for FR-020
-Status: decided (owner, 2026-11-25) — recommendation below accepted · Was: Blocks: device-GPS location validation (B4b) · Owner: project owner
+Status: decided (owner, 2026-11-25) — recommendation below accepted; **licence open** (ODbL finding, see follow-up) · Was: Blocks: device-GPS location validation (B4b) · Owner: project owner
 Exact coordinates must be checked against the UAE boundary and mapped to an emirate in memory (ADR-0006).
 Needs a boundary dataset (source, licence, simplification) or a mapping API (Q-C3-like provider choice).
 Recommendation: a simplified ADM1 GeoJSON with an open licence (e.g. geoBoundaries, CC BY 4.0) behind a
 `GeoBoundaryProvider` interface in `modules/integration/geo/`; manual entry (FR-012) works without it.
+Follow-up (2026-11-25, implementation): the geoBoundaries gbOpen ARE ADM1 release metadata lists its source as
+OpenStreetMap (Wambacher) under **ODbL 1.0**, not CC BY 4.0 (`backend/src/modules/integration/geo/data/ATTRIBUTION.md`).
+**Owner to confirm** that ODbL attribution/share-alike terms are acceptable for the bundled derived copy, or pick
+another dataset. Until confirmed the licence part of this decision is re-opened; code is unaffected (provider interface).
+
+### Q-E8 — CI must run the backend e2e suite
+Status: open · Blocks: CI evidence for spec AC 1, 4, 9, 10, 12, 14–18, 22, 23 · Owner: team (hotspot `.github/**`)
+`npm run test:e2e` (`backend/test/*.e2e-spec.ts`, real MongoDB) is separate from `npm test`; `.github/workflows/backend.yml`
+already has a `mongo:8` service and `MONGODB_URI` but runs only `npm run test:cov`. Needed: a step running
+`npm run test:e2e` (plus the env the suite needs, e.g. `LOCATION_ENCRYPTION_KEY` test value). Hotspot file →
+separate `ci:`/`chore:` PR, not this feature PR.
+
+### Q-E9 — `backend/.env.example` not created
+Status: open · Blocks: onboarding / plan task B1 deliverable · Owner: project owner
+The plan (B1, §4) lists `.env.example`, but the owner's permission rules block agents from writing `.env*` files.
+Interim: the configuration table in `docs/features/FR-009-028-054-add-activity/plan.md` (Implementation notes)
+lists every variable, default and purpose. Owner to create the file (placeholders only, no secrets) or adjust the rule.
 
 ### Q-E7 — In-scope depth for FR-010 drafts, FR-024 blurring, FR-027 replacement evidence
 Status: decided (owner, 2026-11-25) — recommendation below accepted · Was: Blocks: nothing in Slices 1–2 · Owner: project owner
