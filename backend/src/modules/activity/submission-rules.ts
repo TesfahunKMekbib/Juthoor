@@ -41,8 +41,7 @@ export interface CleanSubmission {
 export const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const CLOCK_SKEW_MS = 5 * 60 * 1000; // allow phones whose clock is a few minutes ahead
 
-const isObject = (v: unknown): v is Record<string, unknown> =>
-  typeof v === 'object' && v !== null && !Array.isArray(v);
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const toNumber = (v: unknown): number | null => {
   if (typeof v === 'number' && Number.isFinite(v)) return v;
   if (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v))) return Number(v);
@@ -64,10 +63,7 @@ export function checkSubmission(
   else if (description.length > 500) add('description', 'Keep the description under 500 characters.');
 
   // Date: must be a real date and not in the future (FR-019)
-  const doneAt =
-    typeof input.doneAt === 'string' || typeof input.doneAt === 'number'
-      ? new Date(input.doneAt)
-      : null;
+  const doneAt = typeof input.doneAt === 'string' || typeof input.doneAt === 'number' ? new Date(input.doneAt) : null;
   if (!doneAt || Number.isNaN(doneAt.getTime())) add('doneAt', 'Please choose when the activity happened.');
   else if (doneAt.getTime() > now.getTime() + CLOCK_SKEW_MS) add('doneAt', 'The date cannot be in the future.');
 
@@ -75,7 +71,8 @@ export function checkSubmission(
   const location = isObject(input.location) ? input.location : {};
   const emirate = typeof location.emirate === 'string' ? location.emirate : '';
   const area = typeof location.area === 'string' ? location.area.trim() : '';
-  if (!(EMIRATES as readonly string[]).includes(emirate)) add('location.emirate', 'Please choose an emirate in the UAE.');
+  if (!(EMIRATES as readonly string[]).includes(emirate))
+    add('location.emirate', 'Please choose an emirate in the UAE.');
   if (area.length > 100) add('location.area', 'Keep the area name under 100 characters.');
 
   // Answers to the type's extra questions (FR-011, FR-018)
@@ -94,7 +91,8 @@ export function checkSubmission(
       if (n === null || n < 0) add(field, `${f.label.en} must be a positive number.`);
       else answers[f.key] = n;
     } else if (f.type === 'choice') {
-      if (typeof raw !== 'string' || !f.options.includes(raw)) add(field, `Please choose a valid ${f.label.en.toLowerCase()}.`);
+      if (typeof raw !== 'string' || !f.options.includes(raw))
+        add(field, `Please choose a valid ${f.label.en.toLowerCase()}.`);
       else answers[f.key] = raw;
     } else {
       if (typeof raw !== 'string' && typeof raw !== 'number') {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import 'record_activity_screen.dart';
 
 /// ---------- Theme colors ----------
@@ -24,22 +25,29 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
-  static const _tabs = ['Home', 'Activities', 'Impact', 'Assistant', 'Profile'];
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final tabs = [
+      l10n.tabHome,
+      l10n.tabActivities,
+      l10n.tabImpact,
+      l10n.tabAssistant,
+      l10n.tabProfile,
+    ];
     return Scaffold(
       body: SafeArea(
         child: _index == 0
             ? const HomePage()
             : Center(
-                child: Text(_tabs[_index],
+                child: Text(tabs[_index],
                     style: const TextStyle(
                         color: AppColors.textSecondary, fontSize: 18)),
               ),
       ),
       bottomNavigationBar: _BottomNav(
-        tabs: _tabs,
+        tabs: tabs,
         currentIndex: _index,
         onTap: (i) => setState(() => _index = i),
       ),
@@ -113,10 +121,11 @@ class HomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 16, 16, 24),
       children: [
-        const _Header(name: 'Rashid', subtitle: 'Dubai · Level 3: Eco-Guardian'),
+        _Header(name: l10n.mockUserName, subtitle: l10n.homeHeaderSubtitle),
         const SizedBox(height: 14),
         const _PointsCard(
           points: 1585,
@@ -139,39 +148,37 @@ class HomePage extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         _ListCard(
-          title: '5 submissions need attention',
-          subtitle: 'Fix, retry or review',
-          trailing: const Icon(Icons.chevron_right,
-              color: AppColors.textSecondary, size: 20),
+          title: l10n.needsAttentionTitle(5),
+          subtitle: l10n.needsAttentionSubtitle,
+          trailing: const _ChevronIcon(),
           onTap: () {},
         ),
-        const _SectionTitle('Active challenge'),
+        _SectionTitle(l10n.activeChallenge),
         _ListCard(
-          title: 'Metro Month Challenge',
-          subtitle: 'Team Dubai Greens · 12 of 20 trips',
-          trailing: const _GreenValue('60%'),
+          title: l10n.metroChallengeTitle,
+          subtitle: l10n.metroChallengeSubtitle,
+          trailing: _GreenValue(l10n.percentValue(0.6)),
           onTap: () {},
         ),
-        const _SectionTitle('Recommended for you', tag: 'AI-GENERATED'),
+        _SectionTitle(l10n.recommendedForYou, tag: l10n.aiGenerated),
         _ListCard(
-          title: 'Smart RVM at City Walk',
-          subtitle: 'Recycling · Dubai · 0.8 km',
-          trailing: const _GreenValue('+30'),
-          onTap: () {},
-        ),
-        const SizedBox(height: 10),
-        _ListCard(
-          title: 'Ghaf planting, Al Safa Park',
-          subtitle: 'Planting · Dubai · 2.4 km',
-          trailing: const _GreenValue('+200'),
+          title: l10n.rvmTitle,
+          subtitle: l10n.rvmSubtitle,
+          trailing: _GreenValue(l10n.pointsGain(30)),
           onTap: () {},
         ),
         const SizedBox(height: 10),
         _ListCard(
-          title: 'Your impact this month',
-          subtitle: '64.2 kg CO2 avoided · 8 Ghaf trees',
-          trailing: const Icon(Icons.chevron_right,
-              color: AppColors.textSecondary, size: 20),
+          title: l10n.ghafTitle,
+          subtitle: l10n.ghafSubtitle,
+          trailing: _GreenValue(l10n.pointsGain(200)),
+          onTap: () {},
+        ),
+        const SizedBox(height: 10),
+        _ListCard(
+          title: l10n.impactTitle,
+          subtitle: l10n.impactSubtitle,
+          trailing: const _ChevronIcon(),
           onTap: () {},
         ),
       ],
@@ -194,7 +201,7 @@ class _Header extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Marhaba, $name',
+              Text(AppLocalizations.of(context).greeting(name),
                   style: const TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.w800,
@@ -216,8 +223,9 @@ class _Header extends StatelessWidget {
           ),
           child: IconButton(
             padding: EdgeInsets.zero,
-            icon: const Icon(Icons.notifications,
-                color: Colors.white, size: 20),
+            tooltip: AppLocalizations.of(context).notificationsLabel,
+            icon:
+                const Icon(Icons.notifications, color: Colors.white, size: 20),
             onPressed: () {},
           ),
         ),
@@ -240,13 +248,11 @@ class _PointsCard extends StatelessWidget {
     required this.progress,
   });
 
-  String _fmt(int n) => n.toString().replaceAllMapped(
-      RegExp(r'(\d)(?=(\d{3})+$)'), (m) => '${m[1]},');
-
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 14, 16, 16),
       decoration: BoxDecoration(
         color: AppColors.green,
         borderRadius: BorderRadius.circular(14),
@@ -254,14 +260,14 @@ class _PointsCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('YOUR POINTS',
-              style: TextStyle(
+          Text(l10n.yourPoints,
+              style: const TextStyle(
                   fontSize: 11.5,
                   letterSpacing: 0.4,
                   fontWeight: FontWeight.w500,
                   color: Color(0xFFDDEBE2))),
           const SizedBox(height: 2),
-          Text(_fmt(points),
+          Text(l10n.pointsValue(points),
               style: const TextStyle(
                   fontSize: 34,
                   fontWeight: FontWeight.w800,
@@ -274,8 +280,8 @@ class _PointsCard extends StatelessWidget {
               const SizedBox(width: 4),
               Flexible(
                 child: Text(
-                  '$streakDays-day streak · $ptsToNext pts to Level $nextLevel · '
-                  '$badges of $totalBadges badges',
+                  l10n.pointsStreakSummary(
+                      streakDays, ptsToNext, nextLevel, badges, totalBadges),
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 12, color: Colors.white),
                 ),
@@ -289,8 +295,7 @@ class _PointsCard extends StatelessWidget {
               value: progress,
               minHeight: 6,
               backgroundColor: AppColors.progressTrack,
-              valueColor:
-                  const AlwaysStoppedAnimation(AppColors.progressFill),
+              valueColor: const AlwaysStoppedAnimation(AppColors.progressFill),
             ),
           ),
         ],
@@ -316,8 +321,8 @@ class _RecordButton extends StatelessWidget {
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
         onPressed: onPressed,
-        child: const Text('+  Record an activity',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+        child: Text(AppLocalizations.of(context).recordActivityButton,
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
       ),
     );
   }
@@ -331,24 +336,30 @@ class _SectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(top: 18, bottom: 10),
+      padding: const EdgeInsetsDirectional.only(top: 18, bottom: 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.baseline,
         textBaseline: TextBaseline.alphabetic,
         children: [
-          Text(text,
-              style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary)),
+          Flexible(
+            child: Text(text,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary)),
+          ),
           if (tag != null) ...[
             const SizedBox(width: 6),
-            Text(tag!,
-                style: const TextStyle(
-                    fontSize: 11,
-                    letterSpacing: 0.5,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.greenBright)),
+            Flexible(
+              child: Text(tag!,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 11,
+                      letterSpacing: 0.5,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.greenBright)),
+            ),
           ],
         ],
       ),
@@ -420,4 +431,16 @@ class _GreenValue extends StatelessWidget {
           fontSize: 14,
           fontWeight: FontWeight.w600,
           color: AppColors.greenBright));
+}
+
+/// Chevron that points in the reading direction (mirrors in RTL).
+class _ChevronIcon extends StatelessWidget {
+  const _ChevronIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    final rtl = Directionality.of(context) == TextDirection.rtl;
+    return Icon(rtl ? Icons.chevron_left : Icons.chevron_right,
+        color: AppColors.textSecondary, size: 20);
+  }
 }
