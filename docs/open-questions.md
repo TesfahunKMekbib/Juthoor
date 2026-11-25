@@ -162,6 +162,13 @@ licensed dataset from the current deliverable, and update the scope, traceabilit
 accordingly." → Status: **decided — deferred**. The ODbL dataset and `ATTRIBUTION.md` are removed; backend accepts
 only manual locations (`rules-2`, plan §7); provider interface and point-in-polygon stay dormant. The licence question
 is moot until the next phase picks a dataset (re-open then: source, licence, simplification).
+**Licence correction for history (2026-11-25, security review before archiving branches):** commit `9ef57b5` (history
+only; deleted in `97759c0`) contains `backend/src/modules/integration/geo/data/uae-adm1.json`, a Derivative Database of
+geoBoundaries gbOpen ARE ADM1, © OpenStreetMap contributors, made available under the Open Database License 1.0
+(https://opendatacommons.org/licenses/odbl/1-0/). Its `ATTRIBUTION.md` wrongly states CC BY 4.0; ODbL 1.0 governs.
+The application code is not licensed under ODbL. The dataset is not used by the current code. It is reachable only
+from `feat/FR-009-028-054-add-activity` and PR #4's refs; squash-merging PR #4 keeps it out of `feature`/`main`.
+Any `archive/` tag of that branch carries this notice in its annotated message. Not legal advice — owner/supervisor to confirm.
 
 ### Q-E10 — Android location permissions while FR-020 is deferred
 Status: decided (owner, 2026-11-25) — option (b): remove both permissions this phase; restore with FR-020 · Owner: project owner
