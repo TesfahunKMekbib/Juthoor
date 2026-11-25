@@ -209,11 +209,14 @@ export class ActivitiesService {
     return file;
   }
 
-  async listForUser(userId: string, status?: string) {
+  async listForUser(userId: string, status?: unknown) {
     const filter: Record<string, unknown> = { userId: new Types.ObjectId(userId) };
-    if (status) {
-      if (!(ACTIVITY_STATUSES as readonly string[]).includes(status)) throw new BadRequestException('Unknown status');
-      filter.status = status;
+    if (status !== undefined && status !== '') {
+      // Whitelist (backend.md, NoSQL operator injection): the filter gets our own constant, never the
+      // client's value, so a query object such as ?status[$ne]=x can never reach Mongo.
+      const known = ACTIVITY_STATUSES.find((s) => s === status);
+      if (!known) throw new BadRequestException('Unknown status');
+      filter.status = known;
     }
     const list = await this.activities.find(filter).sort({ submittedAt: -1 }).limit(100).lean<ActivityRecord[]>();
     const types = await this.types.findByIds([...new Set(list.map((a) => String(a.activityTypeId)))]);

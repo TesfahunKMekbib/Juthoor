@@ -302,6 +302,12 @@ describe('ActivitiesService', () => {
     it('rejects an unknown status', async () => {
       await expect(setup().svc.listForUser(userId, 'bogus')).rejects.toBeInstanceOf(BadRequestException);
     });
+    it('rejects a query-operator object as status and never queries with it (NoSQL injection)', async () => {
+      const { model, svc } = setup();
+      await expect(svc.listForUser(userId, { $ne: 'rejected' })).rejects.toBeInstanceOf(BadRequestException);
+      await expect(svc.listForUser(userId, ['accepted'])).rejects.toBeInstanceOf(BadRequestException);
+      expect(model.find).not.toHaveBeenCalled();
+    });
     it('filters by a valid status and returns views', async () => {
       const { model, svc } = setup();
       model.find.mockReturnValue(chain([storedActivity({ status: 'accepted' })]));
