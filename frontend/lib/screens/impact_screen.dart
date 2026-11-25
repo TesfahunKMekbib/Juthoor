@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../l10n/app_localizations.dart';
+
+enum _Audience { me, community }
+
+enum _Period { month, year, lifetime }
 
 class ImpactScreen extends StatefulWidget {
   const ImpactScreen({super.key});
@@ -14,13 +19,15 @@ class _ImpactScreenState extends State<ImpactScreen> {
   static const _green = Color(0xFF32865B);
   static const _text = Color(0xFFF4F7F4);
 
-  String _audience = 'Me';
-  String _period = 'Month';
+  _Audience _audience = _Audience.me;
+  _Period _period = _Period.month;
 
-  bool get _hasSampleData => _audience == 'Me' && _period == 'Month';
+  bool get _hasSampleData =>
+      _audience == _Audience.me && _period == _Period.month;
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return ColoredBox(
       color: _bg,
       child: Center(
@@ -29,27 +36,34 @@ class _ImpactScreenState extends State<ImpactScreen> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 24, 16, 28),
             children: [
-              const Text(
-                'Your impact',
-                style: TextStyle(
+              Text(
+                l10n.impactScreenTitle,
+                style: const TextStyle(
                   color: _text,
                   fontSize: 24,
                   fontWeight: FontWeight.w800,
                 ),
               ),
               const SizedBox(height: 20),
-              const _FieldLabel('View impact for'),
+              _FieldLabel(l10n.impactViewFor),
               const SizedBox(height: 8),
-              _SegmentedChoices(
-                options: const ['Me', 'Community'],
+              _SegmentedChoices<_Audience>(
+                options: [
+                  (_Audience.me, l10n.impactAudienceMe),
+                  (_Audience.community, l10n.impactAudienceCommunity),
+                ],
                 selected: _audience,
                 onSelected: (value) => setState(() => _audience = value),
               ),
               const SizedBox(height: 20),
-              const _FieldLabel('Time period'),
+              _FieldLabel(l10n.impactTimePeriod),
               const SizedBox(height: 8),
-              _SegmentedChoices(
-                options: const ['Month', 'Year', 'Lifetime'],
+              _SegmentedChoices<_Period>(
+                options: [
+                  (_Period.month, l10n.impactPeriodMonth),
+                  (_Period.year, l10n.impactPeriodYear),
+                  (_Period.lifetime, l10n.impactPeriodLifetime),
+                ],
                 selected: _period,
                 onSelected: (value) => setState(() => _period = value),
               ),
@@ -57,13 +71,22 @@ class _ImpactScreenState extends State<ImpactScreen> {
               if (_hasSampleData) ...[
                 const _SummaryCard(),
                 const SizedBox(height: 24),
-                const _SectionTitle('By category'),
+                _SectionTitle(l10n.impactByCategory),
                 const SizedBox(height: 14),
-                const _CategoryProgress(label: 'Transit', percentage: 60),
+                _CategoryProgress(
+                  label: l10n.impactCategoryTransit,
+                  percentage: 60,
+                ),
                 const SizedBox(height: 16),
-                const _CategoryProgress(label: 'Recycling', percentage: 25),
+                _CategoryProgress(
+                  label: l10n.impactCategoryRecycling,
+                  percentage: 25,
+                ),
                 const SizedBox(height: 16),
-                const _CategoryProgress(label: 'Planting', percentage: 15),
+                _CategoryProgress(
+                  label: l10n.impactCategoryPlanting,
+                  percentage: 15,
+                ),
                 const SizedBox(height: 24),
                 const _PrivacyCard(),
                 const SizedBox(height: 20),
@@ -72,7 +95,7 @@ class _ImpactScreenState extends State<ImpactScreen> {
                   child: FilledButton.icon(
                     onPressed: _copyImpact,
                     icon: const Icon(Icons.copy_outlined, size: 19),
-                    label: const Text('Copy impact summary'),
+                    label: Text(l10n.impactCopyButton),
                     style: FilledButton.styleFrom(
                       backgroundColor: _green,
                       foregroundColor: Colors.white,
@@ -97,13 +120,13 @@ class _ImpactScreenState extends State<ImpactScreen> {
   }
 
   Future<void> _copyImpact() async {
-    const summary = 'My Juthoor impact this month: 260 km less driving '
-        'and an estimated 64.2 kg CO₂. '
-        'Category breakdown: Transit 60%, Recycling 25%, Planting 15%.';
-    await Clipboard.setData(const ClipboardData(text: summary));
+    final l10n = AppLocalizations.of(context);
+    final summary = l10n.impactCopySummary;
+    final copiedMessage = l10n.impactCopied;
+    await Clipboard.setData(ClipboardData(text: summary));
     if (!mounted) return;
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      const SnackBar(content: Text('Impact summary copied to clipboard')),
+      SnackBar(content: Text(copiedMessage)),
     );
   }
 }
@@ -138,16 +161,17 @@ class _SectionTitle extends StatelessWidget {
       );
 }
 
-class _SegmentedChoices extends StatelessWidget {
+class _SegmentedChoices<T> extends StatelessWidget {
   const _SegmentedChoices({
     required this.options,
     required this.selected,
     required this.onSelected,
   });
 
-  final List<String> options;
-  final String selected;
-  final ValueChanged<String> onSelected;
+  /// Stable id paired with its localized label.
+  final List<(T, String)> options;
+  final T selected;
+  final ValueChanged<T> onSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -157,9 +181,9 @@ class _SegmentedChoices extends StatelessWidget {
           if (i > 0) const SizedBox(width: 8),
           Expanded(
             child: _OptionButton(
-              label: options[i],
-              selected: options[i] == selected,
-              onTap: () => onSelected(options[i]),
+              label: options[i].$2,
+              selected: options[i].$1 == selected,
+              onTap: () => onSelected(options[i].$1),
             ),
           ),
         ],
@@ -190,9 +214,7 @@ class _OptionButton extends StatelessWidget {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
           side: BorderSide(
-            color: selected
-                ? const Color(0xFF32865B)
-                : const Color(0xFF304538),
+            color: selected ? const Color(0xFF32865B) : const Color(0xFF304538),
           ),
         ),
         clipBehavior: Clip.antiAlias,
@@ -202,7 +224,8 @@ class _OptionButton extends StatelessWidget {
             constraints: const BoxConstraints(minHeight: 48),
             child: Center(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
                 child: Text(
                   label,
                   maxLines: 2,
@@ -227,43 +250,48 @@ class _SummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: const Color(0xFF287A52),
         borderRadius: BorderRadius.circular(18),
       ),
-      child: const Column(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'THIS MONTH',
-            style: TextStyle(
+            l10n.impactThisMonth,
+            style: const TextStyle(
               color: Color(0xFFE0F0E5),
               fontSize: 12,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.8,
             ),
           ),
-          SizedBox(height: 8),
+          const SizedBox(height: 8),
           Text(
-            '260 km',
-            style: TextStyle(
+            l10n.impactDistanceValue,
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 40,
               fontWeight: FontWeight.w800,
               height: 1.08,
             ),
           ),
-          SizedBox(height: 10),
+          const SizedBox(height: 10),
           Text(
-            'Less driving on Sheikh Zayed Road',
-            style: TextStyle(color: Colors.white, fontSize: 14, height: 1.4),
+            l10n.impactDrivingDescription,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              height: 1.4,
+            ),
           ),
-          SizedBox(height: 4),
+          const SizedBox(height: 4),
           Text(
-            'Estimated emissions avoided: 64.2 kg CO₂',
-            style: TextStyle(color: Color(0xFFE0F0E5), fontSize: 13),
+            l10n.impactEmissionsAvoided,
+            style: const TextStyle(color: Color(0xFFE0F0E5), fontSize: 13),
           ),
         ],
       ),
@@ -278,8 +306,9 @@ class _CategoryProgress extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Semantics(
-      label: '$label, $percentage percent',
+      label: l10n.impactCategorySemantics(label, percentage),
       child: ExcludeSemantics(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -323,6 +352,7 @@ class _PrivacyCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -330,17 +360,21 @@ class _PrivacyCard extends StatelessWidget {
         border: Border.all(color: const Color(0xFF304538)),
         borderRadius: BorderRadius.circular(16),
       ),
-      child: const Column(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.shield_outlined, size: 20, color: Color(0xFFB3E3C6)),
-              SizedBox(width: 8),
+              const Icon(
+                Icons.shield_outlined,
+                size: 20,
+                color: Color(0xFFB3E3C6),
+              ),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Privacy-safe map',
-                  style: TextStyle(
+                  l10n.impactPrivacyTitle,
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
@@ -349,18 +383,18 @@ class _PrivacyCard extends StatelessWidget {
               ),
             ],
           ),
-          SizedBox(height: 8),
+          const SizedBox(height: 8),
           Text(
-            'Activity is shown by neighbourhood, never by exact location.',
-            style: TextStyle(
+            l10n.impactPrivacyBody,
+            style: const TextStyle(
               color: Color(0xFFCCD8CF),
               fontSize: 13,
               height: 1.45,
             ),
           ),
-          SizedBox(height: 14),
-          _IllustrativeHeatmap(),
-          SizedBox(height: 7),
+          const SizedBox(height: 14),
+          const _IllustrativeHeatmap(),
+          const SizedBox(height: 7),
         ],
       ),
     );
@@ -373,7 +407,7 @@ class _IllustrativeHeatmap extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      label: 'Illustrative heatmap with two broad green activity areas',
+      label: AppLocalizations.of(context).impactHeatmapSemantics,
       image: true,
       child: ExcludeSemantics(
         child: ClipRRect(
@@ -417,6 +451,7 @@ class _EmptyImpactState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
@@ -427,29 +462,28 @@ class _EmptyImpactState extends StatelessWidget {
         ),
         borderRadius: BorderRadius.circular(18),
       ),
-      child: const Column(
+      child: Column(
         children: [
-          Icon(
+          const Icon(
             Icons.insights_outlined,
             color: Color(0xFFB3E3C6),
             size: 36,
           ),
-          SizedBox(height: 12),
+          const SizedBox(height: 12),
           Text(
-            'No impact data available',
+            l10n.impactEmptyTitle,
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 16,
               fontWeight: FontWeight.w700,
             ),
           ),
-          SizedBox(height: 8),
+          const SizedBox(height: 8),
           Text(
-            'Impact statistics for this selection '
-            'are not available yet.',
+            l10n.impactEmptyBody,
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
               color: Color(0xFFCCD8CF),
               fontSize: 13,
             ),
