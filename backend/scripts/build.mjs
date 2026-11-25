@@ -1,5 +1,5 @@
 // Builds the app: runs tsc, then copies the non-TypeScript data files tsc ignores (src/**/data/*.json,
-// e.g. the UAE boundary dataset read through import.meta.url) into the output folder.
+// read through import.meta.url) into the output folder. None exist while FR-020 is deferred (plan §7).
 // Usage: node scripts/build.mjs [outDir]   (default: dist)
 import { spawnSync } from 'node:child_process';
 import { cpSync, mkdirSync, readdirSync, statSync } from 'node:fs';

@@ -101,38 +101,27 @@ describe('checkSubmission', () => {
       );
       expect(r.clean?.location.area).toBe('');
     });
-    it('accepts valid device coordinates and keeps them for the in-memory geo lookup only (ADR-0006)', () => {
+    // GPS-based validation (FR-020) is deferred to the next phase (owner, 2026-11-25): only the manual
+    // emirate (FR-012) is accepted, so device coordinates never reach the server's lookup or storage.
+    it.each([
+      [{ source: 'device', coordinates: { lat: 24.45, lng: 54.38 }, area: 'Al Reem' }],
+      [{ source: 'device', coordinates: { lat: 24.45, lng: 54.38 }, emirate: 'Dubai' }],
+      [{ source: 'device' }],
+    ])('refuses a device location this phase, manual emirate only (FR-012, FR-020 deferred) %j', (location) => {
+      const r = checkSubmission(type, valid({ location }), [photo], NOW);
+      expect(r.errors.map((e) => `${e.field}:${e.code}`)).toEqual(['location.source:location.sourceInvalid']);
+      expect(r.clean).toBeUndefined();
+    });
+    it('drops stray coordinates sent with a manual location (NFR-007)', () => {
       const r = checkSubmission(
         type,
-        valid({ location: { source: 'device', coordinates: { lat: 24.45, lng: 54.38 }, area: 'Al Reem' } }),
+        valid({ location: { source: 'manual', emirate: 'Dubai', coordinates: { lat: 25.2, lng: 55.27 } } }),
         [photo],
         NOW,
       );
-      expect(r.errors).toEqual([]);
-      expect(r.clean?.location).toEqual({
-        source: 'device',
-        emirate: null,
-        area: 'Al Reem',
-        coordinates: { lat: 24.45, lng: 54.38 },
-      });
+      expect(r.clean?.location).toEqual({ source: 'manual', emirate: 'Dubai', area: '' });
     });
-    it.each([
-      [{ lat: 91, lng: 54 }],
-      [{ lat: 24, lng: 181 }],
-      [{ lat: -91, lng: 0 }],
-      [{ lat: '24', lng: '54' }],
-      [{ lat: NaN, lng: 54 }],
-      [{}],
-      [undefined],
-    ])('rejects invalid device coordinates %j', (coordinates) => {
-      expect(codes(valid({ location: { source: 'device', coordinates } }))).toEqual([
-        'location.coordinates:location.coordinatesInvalid',
-      ]);
-    });
-    it('accepts coordinate boundaries', () =>
-      expect(fields(valid({ location: { source: 'device', coordinates: { lat: 90, lng: -180 } } }))).toEqual([]));
-    // The UAE boundary check (outsideUae) lives in the service via the geo provider and is tested in
-    // activities.service.spec.ts, dataset-geo-boundary-provider.spec.ts and the e2e suite.
+    it.todo('validates device coordinates against the UAE and emirate boundaries (FR-020, next phase)');
     // Program geofences need campaigns/challenges (FR-013), which are out of scope this phase.
     it.todo('validates coordinates against a linked program geofence (FR-020, deferred with FR-013)');
   });

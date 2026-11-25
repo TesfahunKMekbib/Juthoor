@@ -4,7 +4,6 @@ import { BadRequestException, NotFoundException, UnprocessableEntityException } 
 import { Types } from 'mongoose';
 import { createLocationCipher } from '../../common/config/app-config.js';
 import { EventsService } from '../../common/events/events.service.js';
-import type { GeoBoundaryProvider, LocateResult } from '../integration/geo/geo-boundary-provider.js';
 import { SharpEvidenceSanitizer } from '../integration/image/sharp-evidence-sanitizer.js';
 import { InMemoryPhotoStorage } from '../integration/storage/in-memory-photo-storage.js';
 import { ActivitiesService } from './activities.service.js';
@@ -78,7 +77,6 @@ function setup() {
   const types = { findById: mockFn().mockResolvedValue(type), findByIds: mockFn().mockResolvedValue([type]) };
   const photos = new InMemoryPhotoStorage();
   const events = new EventsService();
-  const geo = { locate: jest.fn<(lat: number, lng: number) => LocateResult>().mockReturnValue('Dubai') };
   const publish = jest.spyOn(events, 'publish');
   // Mocks stand in for the Mongoose model and the types service; cast through unknown.
   const svc = new ActivitiesService(
@@ -86,11 +84,10 @@ function setup() {
     types as unknown as ConstructorParameters<typeof ActivitiesService>[1],
     photos,
     events,
-    geo as GeoBoundaryProvider,
     new SharpEvidenceSanitizer(),
     cipher,
   );
-  return { model, types, photos, publish, svc, geo };
+  return { model, types, photos, publish, svc };
 }
 
 describe('ActivitiesService', () => {
@@ -147,30 +144,28 @@ describe('ActivitiesService', () => {
       await expect(p).rejects.toMatchObject({ errors: [{ code: 'activityType.unavailable' }] });
     });
 
-    it('accepts a device location inside the UAE and stores only the encrypted emirate (FR-020, NFR-007)', async () => {
-      const { model, svc, geo, publish } = setup();
+    it('stores the manual emirate only in encrypted form, never stray coordinates (FR-012, NFR-004, NFR-007)', async () => {
+      const { model, svc, publish } = setup();
       model.findOne.mockReturnValue(chain(null));
       model.create.mockResolvedValue({ toObject: () => storedActivity() });
-      const loc = { source: 'device', coordinates: { lat: 24.4539, lng: 54.3773 }, area: 'Reem' };
+      const loc = { source: 'manual', emirate: 'Abu Dhabi', area: 'Reem', coordinates: { lat: 24.4539, lng: 54.3773 } };
       await svc.submit(userId, data({ location: loc }), [file], 'k');
-      expect(geo.locate).toHaveBeenCalledWith(24.4539, 54.3773);
       const doc = model.create.mock.calls[0][0];
       const json = JSON.stringify(doc);
       expect(json).not.toContain('24.45');
       expect(json).not.toContain('54.37');
       expect(json).not.toContain('coordinates');
       expect(doc.location).toBeUndefined();
-      expect(cipher.decryptJson(doc.locationEnc)).toEqual({ emirate: 'Dubai', area: 'Reem' });
+      expect(cipher.decryptJson(doc.locationEnc)).toEqual({ emirate: 'Abu Dhabi', area: 'Reem' });
       expect(JSON.stringify(publish.mock.calls)).not.toContain('24.45');
     });
 
-    it('rejects a device location outside the UAE and stores nothing (FR-020, Q-E3)', async () => {
-      const { model, svc, geo, photos } = setup();
+    it('refuses a device location this phase and stores nothing (FR-020 deferred, Q-E3)', async () => {
+      const { model, svc, photos } = setup();
       model.findOne.mockReturnValue(chain(null));
-      geo.locate.mockReturnValue('outsideUae');
-      const loc = { source: 'device', coordinates: { lat: 51.5, lng: -0.12 } };
+      const loc = { source: 'device', coordinates: { lat: 24.4539, lng: 54.3773 } };
       await expect(svc.submit(userId, data({ location: loc }), [file], 'k')).rejects.toMatchObject({
-        errors: [{ code: 'location.outsideUae' }],
+        errors: [{ field: 'location.source', code: 'location.sourceInvalid' }],
       });
       expect(model.create).not.toHaveBeenCalled();
       expect(photos.files.size).toBe(0);
@@ -238,17 +233,6 @@ describe('ActivitiesService', () => {
       await expect(svc.submit(userId, data(), [file], 'k')).rejects.toMatchObject({
         errors: [{ code: 'photos.tooLarge' }],
       });
-    });
-
-    it('rejects when the geo provider yields no emirate', async () => {
-      const { model, svc, geo } = setup();
-      model.findOne.mockReturnValue(chain(null));
-      geo.locate.mockReturnValue(undefined as unknown as LocateResult);
-      const loc = { source: 'device', coordinates: { lat: 24, lng: 54 } };
-      await expect(svc.submit(userId, data({ location: loc }), [file], 'k')).rejects.toMatchObject({
-        errors: [{ code: 'location.emirateInvalid' }],
-      });
-      expect(model.create).not.toHaveBeenCalled();
     });
 
     it('rejects rule violations with 422 field errors and stores nothing (FR-023)', async () => {

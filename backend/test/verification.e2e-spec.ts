@@ -53,7 +53,7 @@ const data = (over: Record<string, unknown> = {}) => ({
   activityTypeId: treeTypeId,
   description: DESCRIPTION,
   doneAt: new Date(Date.now() - 3600_000).toISOString(),
-  location: { source: 'device', coordinates: { lat: 25.204849, lng: 55.270783 }, area: 'Zorbtown' },
+  location: { source: 'manual', emirate: 'Dubai', area: 'Zorbtown' },
   answers: { species: SPECIES },
   amount: { value: 2 },
   photoKinds: ['photo'],
@@ -335,7 +335,7 @@ describe('phase A: real worker, mock provider (AC 14-18, 24, 25, 30)', () => {
     const bad = [
       data({ doneAt: new Date(Date.now() + 86_400_000).toISOString() }),
       data({ amount: { value: 51 } }),
-      data({ location: { source: 'device', coordinates: { lat: 51.5, lng: -0.12 }, area: 'London' } }),
+      data({ location: { source: 'device', coordinates: { lat: 51.5, lng: -0.12 }, area: 'London' } }), // FR-020 deferred
     ];
     for (const d of bad) expect((await postActivity(h.base, d, [jpeg], uniq())).status).toBe(422);
     expect((await postActivity(h.base, data({ photoKinds: [] }), [], uniq())).status).toBe(422);

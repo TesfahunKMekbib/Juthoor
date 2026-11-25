@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { Injectable } from '@nestjs/common';
 import type { GeoBoundaryProvider, LocateResult } from './geo-boundary-provider.js';
 import { pointInMultiPolygon, type PolygonRings } from './point-in-polygon.js';
 
@@ -13,17 +11,15 @@ export interface BoundaryDataset {
   features: BoundaryFeature[];
 }
 
-/** Loads the bundled geoBoundaries ADM1 copy (data/ATTRIBUTION.md). */
-export function loadBundledDataset(): BoundaryDataset {
-  return JSON.parse(readFileSync(new URL('./data/uae-adm1.json', import.meta.url), 'utf8')) as BoundaryDataset;
-}
-
-/** Point-in-polygon lookup over a boundary dataset (FR-020). Pure, no I/O after construction. */
-@Injectable()
+/**
+ * Point-in-polygon lookup over a boundary dataset (FR-020). Pure, no I/O.
+ * Dormant this phase: GPS-based validation is deferred (owner, 2026-11-25) and no boundary dataset ships
+ * with the app. The next phase supplies a licensed dataset and wires this behind GEO_BOUNDARY_PROVIDER.
+ */
 export class DatasetGeoBoundaryProvider implements GeoBoundaryProvider {
   private readonly shapes: { emirate: LocateResult; polygons: PolygonRings[] }[];
 
-  constructor(dataset: BoundaryDataset = loadBundledDataset()) {
+  constructor(dataset: BoundaryDataset) {
     this.shapes = dataset.features.map((f) => ({
       emirate: f.emirate,
       polygons: f.type === 'Polygon' ? [f.coordinates as PolygonRings] : (f.coordinates as PolygonRings[]),

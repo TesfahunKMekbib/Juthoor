@@ -160,14 +160,18 @@ describe('submission (AC 4, 9, 10, 12)', () => {
     expect(r.body.photos).toHaveLength(1);
   });
 
-  it('accepts a device location inside the UAE and stores the derived emirate (FR-020)', async () => {
+  it('refuses even an in-UAE device location this phase and creates nothing (FR-020 deferred, FR-012)', async () => {
+    const before = await count();
     const r = await post(
       validData({ location: { source: 'device', coordinates: { lat: 25.2048, lng: 55.2708 }, area: 'Downtown' } }),
       [{ buf: jpegWithGps }],
       uniq(),
     );
-    expect(r.status).toBe(201);
-    expect(r.body.location.emirate).toBe('Dubai');
+    expect(r.status).toBe(422);
+    expect(r.body.errors).toEqual([
+      expect.objectContaining({ field: 'location.source', code: 'location.sourceInvalid' }),
+    ]);
+    expect(await count()).toBe(before);
   });
 
   it('repeat submission creates one record (FR-015)', async () => {
@@ -211,15 +215,15 @@ describe('submission (AC 4, 9, 10, 12)', () => {
         'doneAt.future',
       ],
       [
-        'GPS outside the UAE (FR-020)',
+        'a device location while GPS validation is deferred (FR-020)',
         () =>
           post(
             validData({ location: { source: 'device', coordinates: { lat: 51.5, lng: -0.12 }, area: 'London' } }),
             [{ buf: jpegWithGps }],
             uniq(),
           ),
-        'location',
-        'location.outsideUae',
+        'location.source',
+        'location.sourceInvalid',
       ],
       [
         'a text file sent with an image MIME type (FR-021)',
@@ -306,7 +310,13 @@ describe('submission (AC 4, 9, 10, 12)', () => {
     const r = await post(
       validData({
         description: 'crypto check',
-        location: { source: 'device', coordinates: { lat: 25.204849, lng: 55.270783 }, area: 'Secretville' },
+        // Stray coordinates on a manual location must be dropped, never stored (NFR-007).
+        location: {
+          source: 'manual',
+          emirate: 'Dubai',
+          area: 'Secretville',
+          coordinates: { lat: 25.204849, lng: 55.270783 },
+        },
       }),
       [{ buf: jpegWithGps }],
       uniq(),

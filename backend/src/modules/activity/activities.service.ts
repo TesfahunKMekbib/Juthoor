@@ -5,7 +5,6 @@ import { isValidObjectId, Model, Types } from 'mongoose';
 import type { FieldCipher } from '../../common/crypto/field-cipher.js';
 import { type ErrorDetail, ValidationFailedException } from '../../common/errors/validation-failed.exception.js';
 import { EventsService } from '../../common/events/events.service.js';
-import { GEO_BOUNDARY_PROVIDER, type GeoBoundaryProvider } from '../integration/geo/geo-boundary-provider.js';
 import {
   EVIDENCE_SANITIZER,
   EvidenceRejectedError,
@@ -60,13 +59,12 @@ export class ActivitiesService {
     private readonly types: ActivityTypesService,
     @Inject(PHOTO_STORAGE) private readonly photos: PhotoStorage,
     private readonly events: EventsService,
-    @Inject(GEO_BOUNDARY_PROVIDER) private readonly geo: GeoBoundaryProvider,
     @Inject(EVIDENCE_SANITIZER) private readonly sanitizer: EvidenceSanitizer,
     @Inject(LOCATION_CIPHER) private readonly cipher: FieldCipher,
   ) {}
 
   /**
-   * Plan section 3 order: idempotency (FR-015), pure rules (FR-018-021, FR-023), location (FR-012, FR-020),
+   * Plan section 3 order: idempotency (FR-015), pure rules (FR-018-021, FR-023) incl. manual location (FR-012),
    * sanitize (FR-021, NFR-008), store, save, publish. Deterministic failures create no record (Q-E3).
    * A file's real type comes from its leading bytes; the client's MIME type is ignored (FR-021).
    */
@@ -97,22 +95,8 @@ export class ActivitiesService {
     );
     if (!clean) throw new ValidationFailedException(errors);
 
-    // Device coordinates live in memory only and are checked against the UAE boundaries (FR-020, ADR-0006).
-    let emirate = clean.location.emirate;
-    if (clean.location.source === 'device' && clean.location.coordinates) {
-      const found = this.geo.locate(clean.location.coordinates.lat, clean.location.coordinates.lng);
-      if (found === 'outsideUae') {
-        throw new ValidationFailedException([
-          { field: 'location', code: 'location.outsideUae', message: 'The activity must be in the UAE.' },
-        ]);
-      }
-      emirate = found;
-    }
-    if (!emirate) {
-      throw new ValidationFailedException([
-        { field: 'location', code: 'location.emirateInvalid', message: 'Please choose an emirate in the UAE.' },
-      ]);
-    }
+    // The manual emirate was validated by the rules (FR-012); GPS lookup (FR-020) is deferred to the next phase.
+    const emirate = clean.location.emirate;
 
     // Re-encode every photo: EXIF/GPS dropped, file name generated (NFR-007, NFR-008).
     const clearPhotos = await this.sanitizeAll(files, type.photoRules.maxSizeMB * MB);

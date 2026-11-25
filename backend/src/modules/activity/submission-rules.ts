@@ -1,7 +1,7 @@
 import { EMIRATES, PHOTO_KINDS } from './activity.schema.js';
 
 /** Version of the deterministic rule set; recorded with every decision (FR-018, FR-054). */
-export const RULES_VERSION = 'rules-1';
+export const RULES_VERSION = 'rules-2'; // rules-2: manual emirate only, device GPS refused (FR-020 deferred)
 
 export type FieldErrorCode =
   | 'activityType.required'
@@ -12,8 +12,6 @@ export type FieldErrorCode =
   | 'doneAt.future'
   | 'location.sourceInvalid'
   | 'location.emirateInvalid'
-  | 'location.outsideUae'
-  | 'location.coordinatesInvalid'
   | 'location.areaTooLong'
   | 'answers.required'
   | 'answers.notNumber'
@@ -49,7 +47,7 @@ export interface SubmissionInput {
   activityTypeId?: unknown;
   description?: unknown;
   doneAt?: unknown;
-  location?: unknown; // { source: 'device' | 'manual', coordinates?, emirate?, area }
+  location?: unknown; // { source: 'manual', emirate, area } — 'device' is refused until FR-020 (next phase)
   answers?: unknown; // { [formField key]: value }
   amount?: unknown; // { value }
   photoKinds?: unknown; // one kind per uploaded file, same order
@@ -64,12 +62,11 @@ export interface UploadedPhotoInfo {
 export interface CleanSubmission {
   description: string;
   doneAt: Date;
-  /** Device coordinates are for the in-memory geo lookup only; never stored (ADR-0006). */
+  /** Manual emirate only this phase (FR-012); device GPS (FR-020) is deferred. */
   location: {
-    source: 'device' | 'manual';
-    emirate: string | null;
+    source: 'manual';
+    emirate: string;
     area: string;
-    coordinates?: { lat: number; lng: number };
   };
   answers: Record<string, string | number>;
   amountValue: number;
@@ -110,27 +107,19 @@ export function checkSubmission(
   else if (doneAt.getTime() > now.getTime() + CLOCK_SKEW_MS)
     add('doneAt', 'doneAt.future', 'The date cannot be in the future.');
 
-  // Location (FR-012, FR-020): device coordinates (checked against UAE boundaries later by the geo
-  // provider) or a manually chosen emirate. Only the shape is checked here; no I/O.
+  // Location (FR-012): a manually chosen emirate. GPS-based validation (FR-020) is deferred to the next
+  // phase (owner, 2026-11-25), so `source: 'device'` is refused and coordinates are never read.
   const location = isObject(input.location) ? input.location : {};
-  const source = location.source === 'device' || location.source === 'manual' ? location.source : null;
+  const source = location.source === 'manual' ? location.source : null;
   const area = typeof location.area === 'string' ? location.area.trim() : '';
   let emirate: string | null = null;
-  let coordinates: { lat: number; lng: number } | undefined;
   if (!source) {
-    add('location.source', 'location.sourceInvalid', 'Choose how to provide the location.');
-  } else if (source === 'manual') {
+    add('location.source', 'location.sourceInvalid', 'Choose an emirate for the location.');
+  } else {
     const e = typeof location.emirate === 'string' ? location.emirate : '';
     if (!(EMIRATES as readonly string[]).includes(e))
       add('location.emirate', 'location.emirateInvalid', 'Please choose an emirate in the UAE.');
     else emirate = e;
-  } else {
-    const c = isObject(location.coordinates) ? location.coordinates : {};
-    const lat = typeof c.lat === 'number' ? c.lat : NaN;
-    const lng = typeof c.lng === 'number' ? c.lng : NaN;
-    if (!(Math.abs(lat) <= 90) || !(Math.abs(lng) <= 180))
-      add('location.coordinates', 'location.coordinatesInvalid', 'The device location is not valid.');
-    else coordinates = { lat, lng };
   }
   if (area.length > 100)
     add('location.area', 'location.areaTooLong', 'Keep the area name under 100 characters.', { max: 100 });
@@ -204,7 +193,7 @@ export function checkSubmission(
     clean: {
       description,
       doneAt: doneAt as Date,
-      location: coordinates ? { source, emirate, area, coordinates } : { source, emirate, area },
+      location: { source, emirate: emirate as string, area },
       answers,
       amountValue: amountValue as number,
       photoKinds,

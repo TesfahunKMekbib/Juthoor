@@ -147,7 +147,7 @@ FR-011 before/after meter readings? Recommendation: the participant enters the a
 required numeric fields; no derived-quantity rule is added (that would be a new requirement).
 
 ### Q-E6 — UAE / emirate boundary data for FR-020
-Status: decided (owner, 2026-11-25) — recommendation below accepted; **licence open** (ODbL finding, see follow-up) · Was: Blocks: device-GPS location validation (B4b) · Owner: project owner
+Status: decided (owner, 2026-11-25) — **FR-020 GPS validation deferred to the next phase; dataset removed** (see decision at the end) · Was: Blocks: device-GPS location validation (B4b) · Owner: project owner
 Exact coordinates must be checked against the UAE boundary and mapped to an emirate in memory (ADR-0006).
 Needs a boundary dataset (source, licence, simplification) or a mapping API (Q-C3-like provider choice).
 Recommendation: a simplified ADM1 GeoJSON with an open licence (e.g. geoBoundaries, CC BY 4.0) behind a
@@ -156,6 +156,30 @@ Follow-up (2026-11-25, implementation): the geoBoundaries gbOpen ARE ADM1 releas
 OpenStreetMap (Wambacher) under **ODbL 1.0**, not CC BY 4.0 (`backend/src/modules/integration/geo/data/ATTRIBUTION.md`).
 **Owner to confirm** that ODbL attribution/share-alike terms are acceptable for the bundled derived copy, or pick
 another dataset. Until confirmed the licence part of this decision is re-opened; code is unaffected (provider interface).
+Decision (owner, 2026-11-25, in chat): "Defer GPS-based location validation (FR-020) to the next development phase.
+Retain manual emirate selection under FR-012. Preserve the existing implementation where possible, remove any unused
+licensed dataset from the current deliverable, and update the scope, traceability documentation and affected tests
+accordingly." → Status: **decided — deferred**. The ODbL dataset and `ATTRIBUTION.md` are removed; backend accepts
+only manual locations (`rules-2`, plan §7); provider interface and point-in-polygon stay dormant. The licence question
+is moot until the next phase picks a dataset (re-open then: source, licence, simplification).
+
+### Q-E10 — Android location permissions while FR-020 is deferred
+Status: decided (owner, 2026-11-25) — option (b): remove both permissions this phase; restore with FR-020 · Owner: project owner
+`frontend/android/app/src/main/AndroidManifest.xml` declares `ACCESS_COARSE_LOCATION` and `ACCESS_FINE_LOCATION` for
+`geolocator`; after plan §7 the app never requests location. (No `frontend/ios/` folder exists, so there are no iOS
+usage strings to decide.) Options: (a) keep them dormant for the next phase; (b) remove them now and restore with
+FR-020. Recommendation: (b) — an app that declares location access it never uses contradicts data minimisation
+(NFR-007) and store review; `geolocator` and the Dart code can stay dormant either way.
+
+### Q-E11 — Stakeholder visibility of the FR-020 (Must ★) deferral
+Status: decided (owner, 2026-11-25) — FR-020 documented as deferred to the next phase (traceability, spec, plan §7);
+the owner informs the supervisor; `docs/requirements/**` unchanged · Owner: project owner
+FR-020 is an approved Must requirement in the demo scenario. The owner accepted its deferral (Q-E6), but
+`docs/requirements/functional.md` is unchanged and still states it as Must for this phase. Proposed wording for a
+dedicated requirements PR or supervisor note (not applied; requirements are read-only to agents): "FR-020 — Phase 1
+(capstone demo): location is entered manually as an emirate from a fixed list (FR-012) and validated against that list;
+GPS-based UAE/emirate boundary validation and program geofences are deferred to the next phase (owner decision
+2026-11-25, Q-E6: licence of the available boundary dataset)." Owner to decide how stakeholders are informed.
 
 ### Q-E8 — CI must run the backend e2e suite
 Status: open · Blocks: CI evidence for spec AC 1, 4, 9, 10, 12, 14–18, 22, 23 · Owner: team (hotspot `.github/**`)

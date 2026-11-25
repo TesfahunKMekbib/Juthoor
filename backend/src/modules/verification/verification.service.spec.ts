@@ -168,7 +168,6 @@ function setup(opts: { agent?: { assess: (i: unknown) => Promise<AgentAssessment
     photos,
     events,
     {} as never,
-    {} as never,
     cipher,
   );
   const store = new FakeJobStore();
@@ -250,7 +249,7 @@ describe('VerificationService', () => {
       action: 'verification.decision',
       recordId: id,
       outcome: 'accepted',
-      ruleVersion: 'rules-1',
+      ruleVersion: 'rules-2',
       promptVersion: expect.any(String),
       modelVersion: 'mock-1',
     });

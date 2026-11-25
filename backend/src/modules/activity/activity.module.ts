@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { createLocationCipher } from '../../common/config/app-config.js';
-import { GeoModule } from '../integration/geo/geo.module.js';
 import { ImageModule } from '../integration/image/image.module.js';
 import { StorageModule } from '../integration/storage/storage.module.js';
 import { ActivitiesController } from './activities.controller.js';
@@ -19,7 +18,6 @@ import { LOCATION_CIPHER } from './activity.tokens.js';
       { name: ActivityType.name, schema: ActivityTypeSchema },
     ]),
     StorageModule,
-    GeoModule,
     ImageModule,
   ],
   controllers: [ActivityTypesController, ActivitiesController],

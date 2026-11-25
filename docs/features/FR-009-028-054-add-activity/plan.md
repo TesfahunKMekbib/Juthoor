@@ -16,11 +16,12 @@ Proposed ADRs approved together with this plan: ADR-0010 (dev participant), ADR-
 Part `data` (JSON string), parts `photos` (1..`UPLOAD_MAX_FILES`, order = `photoKinds`):
 ```json
 { "activityTypeId": "665f…", "description": "Planted 3 ghaf seedlings", "doneAt": "2026-11-24T07:30:00+04:00",
-  "location": { "source": "device", "coordinates": { "lat": 24.45, "lng": 54.38 }, "area": "Al Reem" },
+  "location": { "source": "manual", "emirate": "Abu Dhabi", "area": "Al Reem" },
   "answers": { "species": "Ghaf" }, "amount": { "value": 3 }, "photoKinds": ["photo"] }
 ```
-Manual (FR-012): `"location": { "source": "manual", "emirate": "Abu Dhabi", "area": "Al Reem" }`.
-Coordinates are used in memory only (ADR-0006) and never stored, echoed or logged.
+Location (FR-012; amended 2026-11-25, §7): only `source: "manual"` is accepted. `source: "device"` → 422
+`location.sourceInvalid` (FR-020 deferred). Coordinates are never read, stored, echoed or logged; stray
+`coordinates` on a manual location are dropped. ~~Device: `{ "source": "device", "coordinates": {lat,lng}, "area" }`~~ (next phase).
 
 **ActivityView**
 ```json
@@ -44,7 +45,7 @@ Coordinates are used in memory only (ADR-0006) and never stored, echoed or logge
 other { "statusCode": 404, "code": "activity.notFound", "message": "Activity not found" }
 ```
 Field codes: `activityType.required|unavailable`, `description.required|tooLong`, `doneAt.required|future`,
-`location.sourceInvalid|emirateInvalid|outsideUae|coordinatesInvalid|areaTooLong`,
+`location.sourceInvalid|emirateInvalid|areaTooLong` (`outsideUae`, `coordinatesInvalid` no longer emitted, §7),
 `answers.required|notNumber|invalidChoice|tooLong` (params `fieldKey`), `amount.required|outOfRange`,
 `photos.tooFew|tooMany|kindMissing|kindUnknown|typeNotAllowed|tooLarge|unreadable`.
 Status reason codes: `verification.evidenceUnclear` (returned), `verification.evidenceUnrelated` (rejected),
@@ -60,8 +61,8 @@ deletes `dist/src/dev`. Tests listed in ADR-0010 §6.
 ## 3. Processing pipeline
 Submit (sync, < 3 s NFR-001): guard → multer limits (`UPLOAD_MAX_FILE_MB` hard cap, `UPLOAD_MAX_FILES`) →
 parse `data` → `checkSubmission` (pure, coded errors, `RULES_VERSION`) → **magic-byte check** (pure
-`image-signature.ts`, header MIME ignored) → **location**: device → `GeoBoundaryProvider.locate(lat,lng)` →
-emirate or `outsideUae`; manual → emirate enum → **sanitize** (`EvidenceSanitizer`/sharp re-encode, EXIF gone,
+`image-signature.ts`, header MIME ignored) → **location** (§7): manual → emirate enum (device refused in
+`checkSubmission` with `location.sourceInvalid`; no `GeoBoundaryProvider` call this phase) → **sanitize** (`EvidenceSanitizer`/sharp re-encode, EXIF gone,
 generated file name) → store via `PhotoStorage` → save activity with `locationEnc` (AES-256-GCM) → publish
 `ActivitySubmitted`.
 Verify (async, Verification domain, AI only after rules pass, FR-018):
@@ -128,7 +129,8 @@ Flow (NFR-013): Home →① RecordActivityScreen (one scrolling form: category c
 amount with unit and range hint, photo slots per `photoRules`, location, date) →② ActivityStatusScreen (= confirmation,
 then live status). Worst case counting the system camera: Home→Form→Camera→Form→Status = 4.
 - Date picker (FR-019): `lastDate: DateTime.now()`; a time later than now on today shows `errDoneAtFuture`.
-- Location: requested only on submit; denied/unavailable → manual emirate dropdown + area (FR-012).
+- Location (amended §7): emirate dropdown + area shown from the start; device location never requested this phase
+  (device path dormant behind `deviceLocationEnabled`, default false). ~~Requested only on submit; denied → manual.~~
 - 422 → errors under fields, all state kept (FR-023); `ActivityFormController` (ChangeNotifier) owns the state.
 - Status screen polls `GET /activities/:id` every 3 s while submitted/pending, stops after 60 s (pull to refresh).
   Shows six states with localized text and reason; advisory note "AI screening is an estimate, not proof" (FR-025).
@@ -143,7 +145,7 @@ then live status). Worst case counting the system camera: Home→Form→Camera�
 | B2 | backend | ADR-0005 enum; coded errors + params in `submission-rules.ts`; 422 filter; `RULES_VERSION` (Q-E3) | — | M | 2 |
 | B3 | backend, security | `image-signature.ts` + `EvidenceSanitizer` (sharp) in `integration/image` | — | M | 3 |
 | B4a | backend, security | `common/crypto/field-cipher.ts` AES-256-GCM | — | S | 3 |
-| B4b | backend | `integration/geo` provider + pure point-in-polygon + dataset (**BLOCKED Q-E6**) | — | M | 4 |
+| B4b | backend | `integration/geo` provider + pure point-in-polygon + dataset — **superseded by §7** (dataset removed, code dormant) | — | M | 4 |
 | B5 | backend | `ActivitiesController` + DTO parse; wire B3/B4 into `submit`; owner-only photo route; view changes | B1 B2 B3 B4a | L | 5 |
 | B6 | backend | `npm run seed:dev` FR-007 types with FR-011 fields (**BLOCKED Q-E5**) | B1 B2 | S | 6 |
 | Q1 | qa | e2e slice 1: AC 1, 4, 9, 10, 12, 22, 23 (+ device AC 8 after B4b) | B5 | M | 7 |
@@ -168,6 +170,48 @@ then live status). Worst case counting the system camera: Home→Form→Camera�
 then F2 ‖ F4 ‖ B5; B6 ‖ Q1. Sequential: anything touching `activities.service.ts` (B5 → B10 → B9b) and
 `record_activity_screen.dart` (F2 → F3). `/document` updates `docs/traceability.md` rows (paths there are stale) per PR.
 **New packages:** backend `sharp`; Flutter `http`, `provider`, `image_picker`, `geolocator`, `http_parser` (ADR-0011).
+
+## 7. Scope change — FR-020 GPS deferred (2026-11-25)
+Amendment status: **approved (2026-11-25, by project owner — "Approve plan §7"; Q-E10: remove Android location
+permissions; Q-E11: FR-020 documented as deferred, owner informs the supervisor).** The backend part was implemented before
+this plan gate (uncommitted on `feat/FR-009-028-054-add-activity`) and is recorded as *implemented pending plan approval*.
+Source (owner, in chat, 2026-11-25): "Defer GPS-based location validation (FR-020) to the next development phase.
+Retain manual emirate selection under FR-012. Preserve the existing implementation where possible, remove any unused
+licensed dataset from the current deliverable, and update the scope, traceability documentation and affected tests
+accordingly." Cause: Q-E6 follow-up (dataset ODbL 1.0, not CC BY 4.0).
+Requirement conflict: FR-020 is Must ★; deferring it is an **accepted scope deviation** (owner) that needs
+stakeholder visibility (Q-E11). `docs/requirements/**` is unchanged.
+
+**Contract change** (§1, §3 updated in place): `location.source` ∈ {`manual`} only. `device` (with or without
+coordinates) → 422 `{field: "location.source", code: "location.sourceInvalid"}` (existing code, no new codes, no
+new ARB keys). Coordinates are never read; stray `coordinates` on a manual location are dropped before storage.
+`CleanSubmission.location` = `{source:'manual', emirate, area}`. Codes `location.outsideUae` and
+`location.coordinatesInvalid` are no longer emitted (removed from the backend `FieldErrorCode` union; the Flutter
+mapper and ARB keys keep them, dormant — harmless, parity test unchanged). `RULES_VERSION` `rules-1` → `rules-2`
+(audit `ruleVersion`, FR-054). Response shapes, data model, events and indexes unchanged.
+
+**Removed:** `backend/src/modules/integration/geo/data/uae-adm1.json`, `data/ATTRIBUTION.md`, `geo.module.ts`;
+`ActivityModule` no longer imports `GeoModule`; geo provider injection and device branch removed from `activities.service.ts`.
+**Dormant (next phase):** `integration/geo/geo-boundary-provider.ts` (interface + `GEO_BOUNDARY_PROVIDER`),
+`point-in-polygon.ts` (+spec), `dataset-geo-boundary-provider.ts` (needs an explicitly supplied dataset; spec uses
+synthetic squares); Flutter `LocationProvider`, `DeviceLocation`, `GeolocatorLocationProvider`, `geolocator` package
+(ADR-0011, unchanged). Re-enabling needs a dataset decision with an acceptable licence (Q-E6) and a new rules version.
+
+| ID | Tag | Task | After | State |
+|---|---|---|---|---|
+| B11 | backend | `submission-rules.ts` manual-only + `rules-2`; service/module geo removal; dataset + `geo.module.ts` deleted; unit + e2e tests updated (device 422 + no record; stray coords dropped; `it.todo` FR-020 boundary) | owner decision | done, pending approval (typecheck/lint clean, 325 unit + 3 todo, branch cov 94.68 %, e2e 40/40) |
+| F6 | flutter | `ActivityFormController({deviceLocationEnabled = false})`: when false `manualLocation` starts true and cannot be turned off, `submit` never calls `locationProvider` and always sends a manual location; `main.dart` keeps the provider (dormant) | §7 approval | done (flutter analyze clean) |
+| F7 | flutter | `record_activity_screen.dart` `buildLocation()`: when device location disabled, always show emirate dropdown + area, hide `locationNoticeSubmit` and the manual button; no new strings (NFR-016); RTL unchanged (NFR-017) | F6 | done |
+| F8 | flutter | Q-E10 (b): remove `ACCESS_COARSE_LOCATION` / `ACCESS_FINE_LOCATION` and their comment from `android/app/src/main/AndroidManifest.xml`; restore with FR-020 | §7 approval | done — geolocator_android 5.2.1 manifest declares no permissions (only a non-exported, never-started `GeolocatorLocationService`), so the merged manifest has no location permission |
+| Q4 | qa | Flutter tests: device-path tests (controller ~L187, ~L206–220; `submission_flow_test` ~L233–255; screen ~L165) pass `deviceLocationEnabled: true`; new tests: default form shows dropdown, no notice/button, `FakeLocationProvider` never called, submit sends `source: manual` (AC 3); `activity_api_test` DeviceLocation serialization kept (dormant model) | F6 F7 | todo |
+| Q5 | qa | Re-run full backend suite + `flutter analyze`/`flutter test`; confirm AC 3 and AC 8 (amended) evidence; `/document` row check | B11 Q4 | todo |
+| D1 | docs | spec AC 3/8, plan §1/§3/§5/§7, traceability FR-012/FR-020, Q-E6 | — | done (this change) |
+**Parallel:** F6 and F7 are sequential in practice (F7 reads the controller flag) but can be one PR; Q4 may be
+written alongside F6/F7 against the contract above (test files disjoint from `lib/`). B11 is independent of all
+Flutter tasks (backend already refuses `device`, so the current app's device submits get 422 until F6 lands —
+F6 should merge with or before B11).
+**Owner questions:** Q-E10 (Android location permissions in `AndroidManifest.xml`: keep dormant or remove this
+phase; F6/F7 do not depend on it), Q-E11 (stakeholder visibility of the FR-020 deviation).
 
 ## Approval gate
 Implementation skills refuse this plan until the line `Status: approved (<date>, by <user>)` replaces line 1.
@@ -194,10 +238,11 @@ Deviations from / clarifications of the plan above (backend paths relative to `b
   `retryPolicy` → retry → `exhausted` (Q-E4); none is mapped to Returned for Correction.
 - No evidence-criteria field exists on activity types: the agent uses the type's English `description` as its single
   criterion (`verification/agent-input.ts`). A real criteria list would need a requirement/schema change.
-- Geo dataset (`integration/geo/data/uae-adm1.json`, `ATTRIBUTION.md`): geoBoundaries metadata lists the source as
-  OpenStreetMap under ODbL 1.0, not CC BY 4.0 — owner to confirm (Q-E6).
+- Geo dataset: geoBoundaries metadata listed the source as OpenStreetMap under ODbL 1.0, not CC BY 4.0 (Q-E6) →
+  owner deferred FR-020 and the dataset was removed (§7).
 - `npm run test:e2e` (`jest.e2e.config.cjs`, needs MongoDB) is separate from `npm test`; CI does not run it yet (Q-E8).
-- `npm run build` (`scripts/build.mjs`) runs tsc and copies `src/**/data/*.json` (geo dataset) into `dist/`.
+- `npm run build` (`scripts/build.mjs`) runs tsc and copies `src/**/data/*.json` into `dist/` (no such file exists
+  after §7; the copy step is a no-op, kept for the next phase).
 - `dist/src/dev` is still compiled (no Dockerfile yet, so "prod image deletes `dist/src/dev`" is not implemented);
   the runtime guard (`common/config/dev-participant-mode.ts`) refuses the dev participant outside `development`.
 - `backend/.env.example` not written (permission rules block it, Q-E9); the table below stands in for it.
