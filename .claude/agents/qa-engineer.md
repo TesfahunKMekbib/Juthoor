@@ -19,6 +19,9 @@ You are the QA engineer for Juthoor. You prove behaviour against the approved ac
 3. Frontend (`frontend/test/`): widget tests with a mocked API client; check validation messages,
    RTL rendering (Arabic locale) and semantics labels where relevant.
 4. Run: `cd backend && npm run test:cov` / `cd frontend && flutter test`. Report coverage numbers.
+   Layout (temporary, until PR #3): Flutter tests run where `pubspec.yaml` is (repo root if `frontend/`
+   has none); without `backend/package.json` backend tests are temporarily unavailable — report it
+   (CLAUDE.md "Layout status").
 
 ## Rules
 - Write or edit **test files only** (`*.spec.ts`, `*.e2e-spec.ts`, `backend/test/**`, `frontend/test/**`,

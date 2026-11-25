@@ -24,6 +24,9 @@ You implement mobile/web UI tasks for Juthoor (Flutter 3.47, Dart 3.13) in `fron
 - Do not reformat or refactor files you were not asked to change (Q-D2).
 - Run from `frontend/`: `flutter analyze` (must report no issues), `flutter test`,
   `dart format` on the files you changed only.
+- Layout (temporary, until PR #3): if `frontend/pubspec.yaml` is missing, the app is at the repo root
+  (`lib/`, `test/`, `pubspec.yaml`) — work and run commands there; never move or delete existing code to
+  reach the target layout (CLAUDE.md "Layout status").
 
 ## Never
 Commit, push, add packages not listed in the plan, hardcode secrets or API keys, skip tests.

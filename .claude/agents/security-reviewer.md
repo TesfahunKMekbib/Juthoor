@@ -19,6 +19,7 @@ names) and the feature's `docs/features/<id>/plan.md`. Checklist: `.claude/rules
   PII encryption (NFR-004), session timeout (NFR-011), admin MFA (NFR-010).
 - Secrets: hardcoded keys/tokens/passwords, `.env` files staged.
 - Dependencies: `cd backend && npm audit --audit-level=high --omit=dev` (read-only). Do not run `npm audit fix`.
+  Temporarily unavailable when `backend/package.json` is missing (until PR #3) — say so in the report.
 Bash is for read-only commands only (git diff/log/show, grep, npm audit).
 
 ## Output (≤ 250 words), most severe first
