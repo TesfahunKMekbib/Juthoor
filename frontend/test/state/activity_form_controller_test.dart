@@ -10,7 +10,7 @@ import '../fakes/fake_activity_api.dart';
 
 final _now = DateTime(2026, 11, 25, 12);
 
-(ActivityFormController, Fakes) _make({Fakes? fakes}) {
+(ActivityFormController, Fakes) _make({Fakes? fakes, bool device = false}) {
   final f = fakes ?? Fakes();
   var n = 0;
   final c = ActivityFormController(
@@ -19,12 +19,13 @@ final _now = DateTime(2026, 11, 25, 12);
     photoPicker: f.photos,
     now: () => _now,
     newIdempotencyKey: () => 'key-${++n}',
+    deviceLocationEnabled: device,
   );
   return (c, f);
 }
 
-Future<ActivityFormController> _filled(Fakes f) async {
-  final (c, _) = _make(fakes: f);
+Future<ActivityFormController> _filled(Fakes f, {bool device = false}) async {
+  final (c, _) = _make(fakes: f, device: device);
   await c.loadTypes();
   c.setDescription('Planted 3 ghaf seedlings');
   c.setAnswer('species', 'Ghaf');
@@ -175,10 +176,11 @@ void main() {
     expect(c.photoPickFailed, isTrue);
   });
 
-  test('submits with the device location and a generated key (FR-012, FR-015)',
-      () async {
+  test(
+      'dormant device path: submits with the device location and a generated '
+      'key (FR-012, FR-015, FR-020 deferred)', () async {
     final f = Fakes();
-    final c = await _filled(f);
+    final c = await _filled(f, device: true);
     final view = await c.submit();
     expect(view, isNotNull);
     expect(f.location.calls, 1);
@@ -191,9 +193,11 @@ void main() {
     expect(c.idempotencyKey, isNull);
   });
 
-  test('location is requested only on submit, not on input (FR-012)', () async {
+  test(
+      'dormant device path: location is requested only on submit '
+      '(FR-012, FR-020 deferred)', () async {
     final f = Fakes();
-    final c = await _filled(f);
+    final c = await _filled(f, device: true);
     expect(f.location.calls, 0);
     // An invalid form never asks for permission either.
     c.setAmount('');
@@ -201,10 +205,11 @@ void main() {
     expect(f.location.calls, 0);
   });
 
-  test('denied location switches to manual entry and keeps data (FR-012)',
-      () async {
+  test(
+      'dormant device path: denied location switches to manual entry and '
+      'keeps data (FR-012, FR-020 deferred)', () async {
     final f = Fakes(location: FakeLocationProvider(position: null));
-    final c = await _filled(f);
+    final c = await _filled(f, device: true);
     expect(await c.submit(), isNull);
     expect(c.manualLocation, isTrue);
     expect(c.locationFallback, isTrue);
@@ -222,9 +227,44 @@ void main() {
     expect(f.location.calls, 1);
   });
 
+  test('default controller is manual-only and cannot switch it off (AC 3)', () {
+    final (c, _) = _make();
+    expect(c.manualLocation, isTrue);
+    c.setManualLocation(false);
+    expect(c.manualLocation, isTrue);
+  });
+
+  test(
+      'default submit never calls the location provider and sends a manual '
+      'location (FR-012, AC 3, FR-020 deferred)', () async {
+    final f = Fakes();
+    final c = await _filled(f);
+    c.setEmirate('Dubai');
+    c.setArea('Al Safa');
+    expect(await c.submit(), isNotNull);
+    expect(f.location.calls, 0);
+    final loc = f.api.submits.single.request.location;
+    expect(loc, isA<ManualLocation>());
+    expect(loc.toJson(), {
+      'source': 'manual',
+      'emirate': 'Dubai',
+      'area': 'Al Safa',
+    });
+  });
+
+  test('default submit without an emirate is refused locally (FR-012, AC 3)',
+      () async {
+    final f = Fakes();
+    final c = await _filled(f);
+    expect(await c.submit(), isNull);
+    expect(f.location.calls, 0);
+    expect(f.api.submits, isEmpty);
+  });
+
   test('keeps entered data after validation errors (FR-023)', () async {
     final f = Fakes();
     final c = await _filled(f);
+    c.setEmirate('Dubai');
     f.api.submitErrors.add(const ApiException(
       status: 422,
       code: 'validation.failed',
@@ -259,6 +299,7 @@ void main() {
       () async {
     final f = Fakes();
     final c = await _filled(f);
+    c.setEmirate('Dubai');
     f.api.submitErrors
         .add(const ApiException(status: 0, code: ApiException.networkCode));
     expect(await c.submit(), isNull);

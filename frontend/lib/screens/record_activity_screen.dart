@@ -347,21 +347,22 @@ class _RecordActivityScreenState extends State<RecordActivityScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         sectionLabel(l10n.locationLabel),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsetsDirectional.all(12),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1C3326),
-            borderRadius: BorderRadius.circular(12),
+        if (c.deviceLocationEnabled)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsetsDirectional.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1C3326),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              c.locationFallback
+                  ? l10n.locationFallbackNotice
+                  : l10n.locationNoticeSubmit,
+              style: const TextStyle(fontSize: 13),
+            ),
           ),
-          child: Text(
-            c.locationFallback
-                ? l10n.locationFallbackNotice
-                : l10n.locationNoticeSubmit,
-            style: const TextStyle(fontSize: 13),
-          ),
-        ),
-        if (!c.manualLocation)
+        if (c.deviceLocationEnabled && !c.manualLocation)
           Align(
             alignment: AlignmentDirectional.centerStart,
             child: TextButton(

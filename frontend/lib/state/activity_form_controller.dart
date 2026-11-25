@@ -52,11 +52,16 @@ class ActivityFormController extends ChangeNotifier {
     required this.photoPicker,
     DateTime Function()? now,
     String Function()? newIdempotencyKey,
+    this.deviceLocationEnabled = false,
   })  : _now = now ?? DateTime.now,
         _newKey = newIdempotencyKey ?? generateIdempotencyKey {
     doneAt = _now();
+    manualLocation = !deviceLocationEnabled;
   }
 
+  /// Device (GPS) location is dormant: when false the location is always
+  /// entered manually and [locationProvider] is never called (Q-E10).
+  final bool deviceLocationEnabled;
   final ActivityApi api;
   final LocationProvider locationProvider;
   final PhotoPicker photoPicker;
@@ -178,6 +183,7 @@ class ActivityFormController extends ChangeNotifier {
   }
 
   void setManualLocation(bool v) {
+    if (!deviceLocationEnabled) v = true;
     manualLocation = v;
     if (!v) locationFallback = false;
     _clearSection('location');
@@ -367,7 +373,7 @@ class ActivityFormController extends ChangeNotifier {
     try {
       final LocationInput location;
       final areaText = area.trim();
-      if (manualLocation) {
+      if (manualLocation || !deviceLocationEnabled) {
         location = ManualLocation(emirate: emirate!, area: areaText);
       } else {
         final c = await locationProvider.currentPosition();

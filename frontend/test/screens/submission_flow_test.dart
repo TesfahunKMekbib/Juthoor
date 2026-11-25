@@ -157,6 +157,12 @@ Future<void> _fillForm(WidgetTester tester, _Strings s) async {
     await tester.pumpAndSettle();
   }
   expect(find.text(s.added), findsNWidgets(2));
+
+  // Manual location is the only mode (FR-012, AC 3, FR-020 deferred).
+  await _tap(tester, find.byKey(const ValueKey('emirate')));
+  await tester.tap(find.text(s.dubai).last);
+  await tester.pumpAndSettle();
+  await _enter(tester, 'field-area', 'Al Safa');
 }
 
 String _text(WidgetTester tester, String key) =>
@@ -179,8 +185,8 @@ void main() {
     final loc = s.locale.languageCode;
 
     testWidgets(
-        'full flow in $loc: home to accepted in 2 transitions with device '
-        'location and an advisory note (NFR-013, FR-017, FR-025)',
+        'full flow in $loc: home to accepted in 2 transitions with a manual '
+        'emirate and an advisory note (NFR-013, FR-012, FR-017, FR-025)',
         (tester) async {
       final f = Fakes();
       final obs = await _pump(tester, f, s.locale);
@@ -196,7 +202,8 @@ void main() {
       final sent = f.api.submits.single;
       expect(sent.key, isNotEmpty);
       expect(sent.request.activityTypeId, 't-clean');
-      expect(sent.request.location.toJson()['source'], 'device');
+      expect(sent.request.location.toJson()['source'], 'manual');
+      expect(f.location.calls, 0);
       expect(sent.request.photos.map((p) => p.kind), ['before', 'after']);
 
       // Advisory note visible, no "verified" or stand-alone "proof" wording.
@@ -230,23 +237,17 @@ void main() {
     });
 
     testWidgets(
-        'denied location in $loc: manual emirate then status screen '
-        '(FR-012, NFR-007, NFR-025)', (tester) async {
+        'default manual location in $loc: no fallback notice, no device '
+        'lookup, status screen (FR-012, NFR-007, AC 3, FR-020 deferred)',
+        (tester) async {
       final f = Fakes(location: FakeLocationProvider(position: null));
       final obs = await _pump(tester, f, s.locale);
       await _fillForm(tester, s);
+      expect(find.textContaining(s.fallback), findsNothing);
+      expect(find.byKey(const ValueKey('emirate')), findsOneWidget);
       await _tap(tester, find.text(s.submit));
 
-      expect(find.textContaining(s.fallback), findsOneWidget);
-      expect(f.api.submits, isEmpty);
-      expect(find.byType(RecordActivityScreen), findsOneWidget);
-      expect(tester.takeException(), isNull);
-
-      await _tap(tester, find.byKey(const ValueKey('emirate')));
-      await tester.tap(find.text(s.dubai).last);
-      await tester.pumpAndSettle();
-      await _enter(tester, 'field-area', 'Al Safa');
-      await _tap(tester, find.text(s.submit));
+      expect(f.location.calls, 0);
 
       expect(find.byType(ActivityStatusScreen), findsOneWidget);
       expect(obs.count, 2);

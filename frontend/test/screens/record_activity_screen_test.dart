@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:juthoor/l10n/app_localizations.dart';
 import 'package:juthoor/models/activity_models.dart';
 import 'package:juthoor/screens/activity_status_screen.dart';
 import 'package:juthoor/screens/home_screen.dart';
@@ -29,6 +30,14 @@ Future<void> fillValid(WidgetTester tester) async {
   await enter(tester, 'field-amount', '3');
   await tapVisible(tester, find.text('Photo (required)'));
   await tester.tap(find.text('Take a photo'));
+  await tester.pumpAndSettle();
+  await chooseEmirate(tester, 'Dubai');
+  await enter(tester, 'field-area', 'Al Safa');
+}
+
+Future<void> chooseEmirate(WidgetTester tester, String name) async {
+  await tapVisible(tester, find.byKey(const ValueKey('emirate')));
+  await tester.tap(find.text(name).last);
   await tester.pumpAndSettle();
 }
 
@@ -160,24 +169,30 @@ void main() {
     expect(find.byType(RecordActivityScreen), findsOneWidget);
   });
 
-  testWidgets('offers manual location when permission denied (FR-012)',
+  testWidgets(
+      'shows the emirate dropdown and area by default, with no location '
+      'notice or manual button (FR-012, AC 3, FR-020 deferred)',
       (tester) async {
+    await pumpWithFakes(tester, const RecordActivityScreen(), Fakes());
+    final l10n = AppLocalizations.of(tester.element(find.byType(Scaffold)));
+    await tester.ensureVisible(find.byKey(const ValueKey('emirate')));
+    expect(find.byKey(const ValueKey('emirate')), findsOneWidget);
+    expect(find.byKey(const ValueKey('field-area')), findsOneWidget);
+    expect(find.text(l10n.locationNoticeSubmit), findsNothing);
+    expect(find.text(l10n.locationFallbackNotice), findsNothing);
+    expect(find.text(l10n.locationManualButton), findsNothing);
+  });
+
+  testWidgets(
+      'submits a manual location without ever asking for the device position '
+      '(FR-012, AC 3, FR-020 deferred)', (tester) async {
     final f = Fakes(location: FakeLocationProvider(position: null));
     await pumpWithFakes(tester, const RecordActivityScreen(), f);
     await fillValid(tester);
     await submit(tester);
 
-    expect(
-        find.textContaining('We could not get your location'), findsOneWidget);
-    expect(find.text('Emirate'), findsOneWidget);
-    expect(f.api.submits, isEmpty);
-
-    await tapVisible(tester, find.byKey(const ValueKey('emirate')));
-    await tester.tap(find.text('Dubai').last);
-    await tester.pumpAndSettle();
-    await enter(tester, 'field-area', 'Al Safa');
-    await submit(tester);
-
+    expect(f.location.calls, 0);
+    expect(find.textContaining('We could not get your location'), findsNothing);
     expect(find.byType(ActivityStatusScreen), findsOneWidget);
     final loc = f.api.submits.single.request.location;
     expect(loc.toJson(), {
@@ -201,7 +216,8 @@ void main() {
     expect(find.byType(RecordActivityScreen), findsNothing);
     expect(find.textContaining('Thank you'), findsOneWidget);
     expect(f.api.submits.single.key, isNotEmpty);
-    expect(f.api.submits.single.request.location.toJson()['source'], 'device');
+    expect(f.api.submits.single.request.location.toJson()['source'], 'manual');
+    expect(f.location.calls, 0);
 
     // The form was replaced, so one back step returns to home.
     final nav = tester.state<NavigatorState>(find.byType(Navigator));
@@ -221,6 +237,7 @@ void main() {
     await tapVisible(tester, find.text('صورة (مطلوبة)'));
     await tester.tap(find.text('التقاط صورة'));
     await tester.pumpAndSettle();
+    await chooseEmirate(tester, 'دبي');
     await tapVisible(tester, find.text('إرسال النشاط'));
     expect(find.byType(ActivityStatusScreen), findsOneWidget);
     expect(tester.takeException(), isNull);
