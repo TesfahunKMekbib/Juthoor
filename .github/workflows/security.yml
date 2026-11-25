@@ -29,7 +29,7 @@ jobs:
           fetch-depth: 0
       # Free for repositories owned by personal accounts. Organization-owned repos need a
       # GITLEAKS_LICENSE secret (free license from gitleaks.io).
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_COMMENTS: false
