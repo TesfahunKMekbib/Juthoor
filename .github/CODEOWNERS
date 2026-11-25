@@ -1,14 +1,12 @@
 # Review routing. GitHub reads this file from the PR's base branch.
-# Add teammates' GitHub usernames per area (see docs/factory/README.md → "Ownership").
-# The last matching pattern wins.
-
-*                       @TesfahunKMekbib
-
-# backend/              @<backend-owner>
-# frontend/             @<flutter-owner>
-# docs/requirements/    @TesfahunKMekbib @<second-approver>
+# Ownership covers only the shared factory configuration and the approved requirements;
+# application code (backend/, frontend/, lib/, ...) has no owner here, so teammates' PRs
+# are not routed to one person. The last matching pattern wins.
 
 # Shared factory configuration: changes affect every teammate's sessions.
 /.claude/               @TesfahunKMekbib
 /.github/               @TesfahunKMekbib
 /CLAUDE.md              @TesfahunKMekbib
+
+# Approved requirements (read-only for agents; changed only in dedicated docs: PRs).
+/docs/requirements/     @TesfahunKMekbib
