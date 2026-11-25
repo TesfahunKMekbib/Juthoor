@@ -51,6 +51,7 @@ describe('parseAiConfig (AC 32)', () => {
       minCallMs: 3000,
       followupBelow: 0.5,
       imageMaxPx: 1024,
+      maxImages: 6,
       maxOutputTokens: 800,
       timeoutMs: 20000,
     });
@@ -62,6 +63,9 @@ describe('parseAiConfig (AC 32)', () => {
     expect(() => parseAiConfig({ AI_MAX_CALLS: '2.5' })).toThrow(AiConfigError);
     expect(() => parseAiConfig({ AI_TIMEOUT_MS: 'abc' })).toThrow(AiConfigError);
     expect(() => parseAiConfig({ AI_MAX_CALLS: '0' })).toThrow(AiConfigError);
+    expect(() => parseAiConfig({ AI_MAX_IMAGES: '0' })).toThrow(AiConfigError);
+    expect(() => parseAiConfig({ AI_MAX_IMAGES: '21' })).toThrow(AiConfigError);
+    expect(parseAiConfig({ AI_MAX_IMAGES: '3' }).maxImages).toBe(3);
   });
   it('requires GEMINI_API_KEY and AI_MODEL for gemini', () => {
     expect(() => parseAiConfig({ AI_PROVIDER: 'gemini' })).toThrow(AiConfigError);

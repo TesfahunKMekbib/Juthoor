@@ -2,7 +2,7 @@ import type { AgentStep, ResponseSchema } from '../../integration/ai/multimodal-
 import { validateAgainstSchema } from './schema-validator.js';
 
 /** Bump when a response schema changes (recorded in audit, FR-054). */
-export const SCHEMA_VERSION = 'schema-v1';
+export const SCHEMA_VERSION = 'schema-v2';
 
 export const PHOTO_FLAGS = [
   'screenshot',
@@ -90,18 +90,19 @@ export function claimSchema(): ResponseSchema {
   };
 }
 
-export function followupSchema(): ResponseSchema {
+/** Only the issues actually asked may be answered; the enum is limited to them (security review S2-1). */
+export function followupSchema(issues: readonly IssueCode[] = ISSUE_CODES): ResponseSchema {
   return {
     type: 'object',
     required: ['answers', 'confidence'],
     properties: {
       answers: {
         type: 'array',
-        maxItems: ISSUE_CODES.length,
+        maxItems: issues.length,
         items: {
           type: 'object',
           required: ['issue', 'verdict'],
-          properties: { issue: { type: 'string', enum: ISSUE_CODES }, verdict },
+          properties: { issue: { type: 'string', enum: issues }, verdict },
         },
       },
       confidence: unit,
@@ -130,18 +131,32 @@ export function parseClaim(json: unknown): ParseResult<ClaimFindings> {
   return checked.ok ? { ok: true, value: checked.value as ClaimFindings } : checked;
 }
 
-export function parseFollowup(json: unknown): ParseResult<FollowupFindings> {
-  const checked = validateAgainstSchema(followupSchema(), json);
-  return checked.ok ? { ok: true, value: checked.value as FollowupFindings } : checked;
+/** Rejects issues that were not asked and duplicate answers for the same issue. */
+export function parseFollowup(
+  json: unknown,
+  issues: readonly IssueCode[] = ISSUE_CODES,
+): ParseResult<FollowupFindings> {
+  const checked = validateAgainstSchema(followupSchema(issues), json);
+  if (!checked.ok) return checked;
+  const value = checked.value as FollowupFindings;
+  if (new Set(value.answers.map((a) => a.issue)).size !== value.answers.length) {
+    return { ok: false, errors: ['$.answers:duplicate'] };
+  }
+  return { ok: true, value };
 }
 
-export function schemaFor(step: AgentStep, photoCount: number, criteriaIds: readonly string[]): ResponseSchema {
+export function schemaFor(
+  step: AgentStep,
+  photoCount: number,
+  criteriaIds: readonly string[],
+  issues: readonly IssueCode[] = ISSUE_CODES,
+): ResponseSchema {
   switch (step) {
     case 'evidence':
       return evidenceSchema(photoCount, criteriaIds);
     case 'claim':
       return claimSchema();
     case 'followup':
-      return followupSchema();
+      return followupSchema(issues);
   }
 }

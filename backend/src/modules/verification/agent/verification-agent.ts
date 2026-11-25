@@ -30,6 +30,8 @@ import {
 export interface AgentConfig extends BudgetConfig {
   followupBelow: number;
   imageMaxPx: number;
+  /** Hard cap on images per model call, regardless of the type's maxPhotos (AI_MAX_IMAGES). */
+  maxImages: number;
   maxOutputTokens: number;
 }
 
@@ -109,7 +111,7 @@ export class VerificationAgent {
         'followup',
         'optional',
         buildFollowupPrompt(input, decision.issues),
-        parseFollowup,
+        (json) => parseFollowup(json, decision.issues),
         true,
       );
     }
@@ -138,8 +140,9 @@ export class VerificationAgent {
 
   private async prepareImages(input: AgentInput): Promise<AgentInput> {
     try {
-      const prepared = await this.imagePreparer.prepare(input.photos, this.config.imageMaxPx);
-      return { ...input, photos: input.photos.map((p, i) => ({ ...p, ...prepared[i]! })) };
+      const photos = input.photos.slice(0, this.config.maxImages);
+      const prepared = await this.imagePreparer.prepare(photos, this.config.imageMaxPx);
+      return { ...input, photos: photos.map((p, i) => ({ ...p, ...prepared[i]! })) };
     } catch {
       throw new AgentTechnicalError('ai.imagePrep', false);
     }

@@ -50,6 +50,7 @@ const VERIFICATION_SERVICE_CONFIG = Symbol('VERIFICATION_SERVICE_CONFIG');
           perCallTimeoutMs: ai.timeoutMs,
           followupBelow: ai.followupBelow,
           imageMaxPx: ai.imageMaxPx,
+          maxImages: ai.maxImages,
           maxOutputTokens: ai.maxOutputTokens,
         }),
       inject: [AI_CONFIG, MULTIMODAL_MODEL, IMAGE_PREPARER],

@@ -51,13 +51,13 @@ function check(schema: ResponseSchema, value: unknown, path: string, errors: str
       }
       const record = value as Record<string, unknown>;
       for (const key of Object.keys(record)) {
-        if (!(key in schema.properties)) errors.push(`${path}.${key}:unexpected`);
+        if (!Object.hasOwn(schema.properties, key)) errors.push(`${path}.${key}:unexpected`);
       }
       for (const key of schema.required) {
-        if (!(key in record)) errors.push(`${path}.${key}:missing`);
+        if (!Object.hasOwn(record, key)) errors.push(`${path}.${key}:missing`);
       }
       for (const [key, sub] of Object.entries(schema.properties)) {
-        if (key in record) check(sub, record[key], `${path}.${key}`, errors);
+        if (Object.hasOwn(record, key)) check(sub, record[key], `${path}.${key}`, errors);
       }
       return;
     }

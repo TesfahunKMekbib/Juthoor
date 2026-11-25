@@ -25,6 +25,9 @@ export function parseVerificationConfig(env: Env): VerificationConfig {
   };
 }
 
+/** Extra time the lease must outlast the AI budget by, so a slow but live worker is never reclaimed. */
+export const LEASE_MARGIN_MS = 30_000;
+
 export interface WorkerConfig {
   /** VERIFY_WORKER=off disables the background worker (e.g. API-only instances or tests). Default on. */
   enabled: boolean;
@@ -37,9 +40,14 @@ export interface WorkerConfig {
 export function parseWorkerConfig(env: Env): WorkerConfig {
   const flag = (env['VERIFY_WORKER']?.trim() || 'on').toLowerCase();
   if (flag !== 'on' && flag !== 'off') throw new AiConfigError('VERIFY_WORKER must be "on" or "off"');
+  const leaseMs = readNumber(env, 'VERIFY_LEASE_MS', 60000, { min: 1000, integer: true });
+  const budgetMs = readNumber(env, 'AI_TOTAL_BUDGET_MS', 24000, { min: 1, integer: true });
+  if (leaseMs < budgetMs + LEASE_MARGIN_MS) {
+    throw new AiConfigError(`VERIFY_LEASE_MS must be at least AI_TOTAL_BUDGET_MS + ${LEASE_MARGIN_MS}`);
+  }
   return {
     enabled: flag === 'on',
-    leaseMs: readNumber(env, 'VERIFY_LEASE_MS', 60000, { min: 1000, integer: true }),
+    leaseMs,
     batchSize: readNumber(env, 'VERIFY_BATCH_SIZE', 5, { min: 1, max: 100, integer: true }),
   };
 }

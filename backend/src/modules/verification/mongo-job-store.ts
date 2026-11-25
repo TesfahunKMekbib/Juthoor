@@ -13,6 +13,7 @@ const toRecord = (j: JobDoc): JobRecord => ({
   nextAttemptAt: j.nextAttemptAt,
   lockedUntil: j.lockedUntil,
   lastErrorCode: j.lastErrorCode,
+  result: j.result ?? null,
 });
 
 /** MongoDB queue. Claims use findOneAndUpdate with a lease, so concurrent instances never share a job (NFR-027). */
@@ -52,24 +53,30 @@ export class MongoJobStore implements JobStore {
     return this.claim({ activityId: new Types.ObjectId(activityId) }, now, leaseMs);
   }
 
-  async done(activityId: string, result: JobOutcome | null): Promise<void> {
-    await this.jobs.updateOne(
-      { activityId: new Types.ObjectId(activityId) },
-      { $set: { state: 'done', lockedUntil: null, lastErrorCode: null, result } },
+  /** Fence: only the worker that still holds the claim (same attempt, still running) may write the outcome. */
+  private async fenced(job: JobRecord, set: Record<string, unknown>): Promise<boolean> {
+    const res = await this.jobs.updateOne(
+      { activityId: new Types.ObjectId(job.activityId), state: 'running', attempts: job.attempts },
+      { $set: set },
     );
+    return res.matchedCount > 0;
   }
 
-  async retryAt(activityId: string, nextAttemptAt: Date, errorCode: string): Promise<void> {
-    await this.jobs.updateOne(
-      { activityId: new Types.ObjectId(activityId) },
-      { $set: { state: 'queued', nextAttemptAt, lockedUntil: null, lastErrorCode: errorCode } },
-    );
+  done(job: JobRecord, result: JobOutcome | null): Promise<boolean> {
+    return this.fenced(job, { state: 'done', lockedUntil: null, lastErrorCode: null, result });
   }
 
-  async exhaust(activityId: string, errorCode: string): Promise<void> {
-    await this.jobs.updateOne(
-      { activityId: new Types.ObjectId(activityId) },
-      { $set: { state: 'exhausted', lockedUntil: null, lastErrorCode: errorCode } },
-    );
+  retryAt(job: JobRecord, nextAttemptAt: Date, errorCode: string, result?: JobOutcome | null): Promise<boolean> {
+    return this.fenced(job, {
+      state: 'queued',
+      nextAttemptAt,
+      lockedUntil: null,
+      lastErrorCode: errorCode,
+      ...(result !== undefined ? { result } : {}),
+    });
+  }
+
+  exhaust(job: JobRecord, errorCode: string): Promise<boolean> {
+    return this.fenced(job, { state: 'exhausted', lockedUntil: null, lastErrorCode: errorCode });
   }
 }

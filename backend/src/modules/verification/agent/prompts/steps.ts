@@ -51,12 +51,13 @@ export function buildFollowupPrompt(input: AgentInput, issues: readonly IssueCod
     'Step: followup. Earlier answers were uncertain or inconsistent. Re-check only these issue codes:',
     issues.join(', '),
     'Return one answer (yes, no or unclear) per listed issue and a fresh confidence 0..1.',
-    claimContext(input),
+    // Participant text is not needed to judge the photos, so it is left out of a photo_relevance-only question.
+    ...(issues.every((i) => i === 'photo_relevance') ? [] : [claimContext(input)]),
   ].join('\n');
   return {
     system: SYSTEM_PROMPT,
     parts: [{ type: 'text', text }, ...imageParts(input)],
-    responseSchema: followupSchema(),
+    responseSchema: followupSchema(issues),
   };
 }
 

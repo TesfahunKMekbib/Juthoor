@@ -132,6 +132,29 @@ describe('GeminiMultimodalModel contract (NFR-023, AC 33)', () => {
     ).rejects.toMatchObject({ kind: 'invalid_output', code: 'provider.badBody' });
   });
 
+  it('rejects an oversized response body as invalid_output (security review S2-6)', async () => {
+    const big = 'x'.repeat(1024 * 1024 + 1);
+    // streamed body with no content-length: the bounded reader must stop it
+    await expect(
+      model(() => Promise.resolve(new Response(big, { status: 200 }))).generate(request),
+    ).rejects.toMatchObject({ kind: 'invalid_output', code: 'provider.bodyTooLarge' });
+    // declared length over the cap is refused before reading
+    const declared = new Response('{}', { status: 200, headers: { 'content-length': String(2 * 1024 * 1024) } });
+    await expect(model(() => Promise.resolve(declared)).generate(request)).rejects.toMatchObject({
+      kind: 'invalid_output',
+      code: 'provider.bodyTooLarge',
+    });
+    // a body exactly at the cap is still read (and fails only as non-JSON)
+    const atCap = 'y'.repeat(1024 * 1024);
+    await expect(
+      model(() => Promise.resolve(new Response(atCap, { status: 200 }))).generate(request),
+    ).rejects.toMatchObject({ code: 'provider.badBody' });
+    // a body-less response is a bad body, not a crash
+    await expect(
+      model(() => Promise.resolve(new Response(null, { status: 200 }))).generate(request),
+    ).rejects.toMatchObject({ code: 'provider.badBody' });
+  });
+
   it('supports an overridable base URL and defaults to global fetch', async () => {
     let seen = '';
     const m = new GeminiMultimodalModel({

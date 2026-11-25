@@ -4,12 +4,20 @@ import { type HydratedDocument, Types } from 'mongoose';
 export const JOB_STATES = ['queued', 'running', 'done', 'exhausted'] as const;
 export type JobState = (typeof JOB_STATES)[number];
 
+@Schema({ _id: false })
+export class JobStep {
+  @Prop({ type: String }) tag!: string;
+  @Prop({ type: String }) modelVersion!: string;
+}
+
 /** Codes and numbers only: no photo, text or model output (ADR-0008, FR-025). */
 @Schema({ _id: false })
 export class JobResult {
   @Prop({ type: Number }) score!: number;
   @Prop({ type: [String], default: [] }) flags!: string[];
   @Prop({ type: String }) outcome!: string;
+  /** One entry per executed agent step; lets a retried audit append be rebuilt without re-running the AI (FR-054). */
+  @Prop({ type: [SchemaFactory.createForClass(JobStep)], default: [] }) steps!: JobStep[];
   @Prop({ type: String }) providerId!: string;
   @Prop({ type: [String], default: [] }) modelVersions!: string[];
   @Prop({ type: String }) promptVersion!: string;

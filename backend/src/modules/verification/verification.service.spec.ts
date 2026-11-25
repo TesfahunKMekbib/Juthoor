@@ -79,17 +79,27 @@ class FakeJobStore implements JobStore {
   claimOne(id: string, now: Date, leaseMs: number) {
     return this.claim((j) => j.activityId === id, now, leaseMs);
   }
-  done(id: string, result: JobOutcome | null) {
-    Object.assign(this.jobs.get(id)!, { state: 'done', lockedUntil: null, result });
-    return Promise.resolve();
+  /** Same fence as MongoJobStore: only the current claim (running, same attempt) may write. */
+  private fenced(job: JobRecord, set: Record<string, unknown>): Promise<boolean> {
+    const j = this.jobs.get(job.activityId);
+    if (!j || j.state !== 'running' || j.attempts !== job.attempts) return Promise.resolve(false);
+    Object.assign(j, set);
+    return Promise.resolve(true);
   }
-  retryAt(id: string, nextAttemptAt: Date, code: string) {
-    Object.assign(this.jobs.get(id)!, { state: 'queued', nextAttemptAt, lockedUntil: null, lastErrorCode: code });
-    return Promise.resolve();
+  done(job: JobRecord, result: JobOutcome | null) {
+    return this.fenced(job, { state: 'done', lockedUntil: null, result });
   }
-  exhaust(id: string, code: string) {
-    Object.assign(this.jobs.get(id)!, { state: 'exhausted', lockedUntil: null, lastErrorCode: code });
-    return Promise.resolve();
+  retryAt(job: JobRecord, nextAttemptAt: Date, code: string, result?: JobOutcome | null) {
+    return this.fenced(job, {
+      state: 'queued',
+      nextAttemptAt,
+      lockedUntil: null,
+      lastErrorCode: code,
+      ...(result !== undefined ? { result } : {}),
+    });
+  }
+  exhaust(job: JobRecord, code: string) {
+    return this.fenced(job, { state: 'exhausted', lockedUntil: null, lastErrorCode: code });
   }
 }
 
@@ -134,6 +144,7 @@ const agentConfig = {
   perCallTimeoutMs: 20000,
   followupBelow: 0.5,
   imageMaxPx: 800,
+  maxImages: 6,
   maxOutputTokens: 700,
 };
 const T0 = new Date('2026-11-25T10:00:00Z');
@@ -281,13 +292,65 @@ describe('VerificationService', () => {
     expect(JSON.stringify([...s.audit.entries.values()])).not.toContain('Planted');
   });
 
-  it('keeps the decision when the audit append fails and logs the activityId only (FR-054)', async () => {
+  it('keeps the job not-done when the audit append fails, then appends once without re-deciding (FR-054, S2-3)', async () => {
     const s = setup();
     const id = await s.addActivity();
     s.audit.failNext = true;
     await s.svc.onSubmitted(id);
     expect(s.activityModel.docs.get(id)!.status).toBe('accepted');
+    expect(s.store.jobs.get(id)).toMatchObject({ state: 'queued', lastErrorCode: 'audit.appendFailed' });
+    expect(s.audit.entries.size).toBe(0);
+    // retry after backoff: no second AI call, no second event, audit written from the stored decision
+    const calls = s.model.current as MockMultimodalModel;
+    const before = calls.calls.length;
+    s.clock.t += 1001;
+    expect(await s.svc.sweep()).toBe(1);
+    expect(calls.calls.length).toBe(before);
     expect(s.store.jobs.get(id)!.state).toBe('done');
+    expect(s.audit.entries.get(`decision:${id}`)).toMatchObject({ outcome: 'accepted', recordId: id });
+    expect(s.published.filter((p) => p.name === 'ActivityDecided')).toHaveLength(1);
+    expect(s.published.filter((p) => p.name === 'ActivityAccepted')).toHaveLength(1);
+  });
+
+  it('keeps retrying a failing audit append until attempts run out, then exhausts (FR-054)', async () => {
+    const s = setup();
+    const id = await s.addActivity();
+    jest.spyOn(s.audit, 'append').mockRejectedValue(new Error('db down'));
+    await s.svc.onSubmitted(id);
+    for (let i = 0; i < 2; i++) {
+      s.clock.t += 60000;
+      await s.svc.sweep();
+    }
+    expect(s.store.jobs.get(id)).toMatchObject({ state: 'exhausted', lastErrorCode: 'audit.appendFailed' });
+    expect(s.published.filter((p) => p.name === 'ActivityDecided')).toHaveLength(1);
+  });
+
+  it('a worker whose lease expired cannot overwrite the new owner result (S2-2)', async () => {
+    const s = setup();
+    const id = await s.addActivity();
+    await s.store.enqueue(id, T0);
+    const stale = (await s.store.claimOne(id, T0, 1000))!; // worker A, attempt 1, then stalls
+    s.clock.t += 2000;
+    const fresh = (await s.store.claimDue(s.now(), 60000))!; // worker B reclaims, attempt 2
+    expect(fresh.attempts).toBe(2);
+    expect(await s.store.done(stale, null)).toBe(false);
+    expect(await s.store.retryAt(stale, T0, 'x')).toBe(false);
+    expect(await s.store.exhaust(stale, 'x')).toBe(false);
+    expect(s.store.jobs.get(id)).toMatchObject({ state: 'running', attempts: 2, lastErrorCode: null });
+    await s.svc.runJob(stale); // stale worker finishes: decides idempotently but cannot touch the job
+    expect(s.store.jobs.get(id)).toMatchObject({ state: 'running', attempts: 2 });
+    expect(await s.store.done(fresh, null)).toBe(true);
+  });
+
+  it('a stale worker failing technically cannot requeue the job either (S2-2)', async () => {
+    const s = setup({ model: new MockMultimodalModel({ mode: 'unavailable' }) });
+    const id = await s.addActivity();
+    await s.store.enqueue(id, T0);
+    const stale = (await s.store.claimOne(id, T0, 1000))!;
+    s.clock.t += 2000;
+    await s.store.claimDue(s.now(), 60000);
+    await s.svc.runJob(stale);
+    expect(s.store.jobs.get(id)).toMatchObject({ state: 'running', attempts: 2, lastErrorCode: null });
   });
 
   it('goes pending on an AI outage, retries with backoff, then accepts once the model is back (FR-028)', async () => {
@@ -520,5 +583,11 @@ describe('parseWorkerConfig', () => {
     expect(parseWorkerConfig({ VERIFY_WORKER: 'OFF' }).enabled).toBe(false);
     expect(() => parseWorkerConfig({ VERIFY_WORKER: 'maybe' })).toThrow();
     expect(() => parseWorkerConfig({ VERIFY_LEASE_MS: '5' })).toThrow();
+  });
+
+  it('requires the lease to outlast the AI budget by a margin (S2-2)', () => {
+    expect(() => parseWorkerConfig({ VERIFY_LEASE_MS: '50000' })).toThrow(/AI_TOTAL_BUDGET_MS/);
+    expect(() => parseWorkerConfig({ VERIFY_LEASE_MS: '60000', AI_TOTAL_BUDGET_MS: '40000' })).toThrow();
+    expect(parseWorkerConfig({ VERIFY_LEASE_MS: '60000', AI_TOTAL_BUDGET_MS: '30000' }).leaseMs).toBe(60000);
   });
 });

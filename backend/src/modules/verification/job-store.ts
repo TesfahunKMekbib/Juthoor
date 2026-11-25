@@ -7,6 +7,8 @@ export interface JobRecord {
   nextAttemptAt: Date;
   lockedUntil: Date | null;
   lastErrorCode: string | null;
+  /** Set while a decision is stored but its audit entry is not yet written (retry only appends the audit). */
+  result?: JobOutcome | null;
 }
 
 export type JobOutcome = JobResult;
@@ -22,9 +24,14 @@ export interface JobStore {
   claimDue(now: Date, leaseMs: number): Promise<JobRecord | null>;
   /** Same, for one activity (the immediate attempt). */
   claimOne(activityId: string, now: Date, leaseMs: number): Promise<JobRecord | null>;
-  done(activityId: string, result: JobOutcome | null): Promise<void>;
-  retryAt(activityId: string, nextAttemptAt: Date, errorCode: string): Promise<void>;
-  exhaust(activityId: string, errorCode: string): Promise<void>;
+  /**
+   * The three writes below are fenced on the claim: they apply only while the job is still running with the
+   * attempt number the caller claimed. They return false when the lease was lost (another worker took the job),
+   * and then change nothing (security review S2-2).
+   */
+  done(job: JobRecord, result: JobOutcome | null): Promise<boolean>;
+  retryAt(job: JobRecord, nextAttemptAt: Date, errorCode: string, result?: JobOutcome | null): Promise<boolean>;
+  exhaust(job: JobRecord, errorCode: string): Promise<boolean>;
 }
 
 export const JOB_STORE = Symbol('JOB_STORE');

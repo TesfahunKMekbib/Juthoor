@@ -21,6 +21,7 @@ export interface AiConfig {
   minCallMs: number;
   followupBelow: number;
   imageMaxPx: number;
+  maxImages: number;
   maxOutputTokens: number;
 }
 
@@ -70,6 +71,7 @@ export function parseAiConfig(env: Env): AiConfig {
     minCallMs: readNumber(env, 'AI_MIN_CALL_MS', 3000, { min: 0, integer: true }),
     followupBelow: readNumber(env, 'AI_FOLLOWUP_BELOW', 0.5, { min: 0, max: 1 }),
     imageMaxPx: readNumber(env, 'AI_IMAGE_MAX_PX', 1024, { min: 64, max: 4096, integer: true }),
+    maxImages: readNumber(env, 'AI_MAX_IMAGES', 6, { min: 1, max: 20, integer: true }),
     maxOutputTokens: readNumber(env, 'AI_MAX_OUTPUT_TOKENS', 800, { min: 1, integer: true }),
   };
 }

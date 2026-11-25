@@ -8,7 +8,7 @@ import type { AuditService } from '../audit/audit.service.js';
 import { ModelError } from '../integration/ai/multimodal-model.js';
 import type { PhotoStorage } from '../integration/storage/photo-storage.js';
 import { buildAgentInput } from './agent-input.js';
-import { AgentTechnicalError, type AgentAssessment, type VerificationAgent } from './agent/verification-agent.js';
+import { AgentTechnicalError, type VerificationAgent } from './agent/verification-agent.js';
 import { decideOutcome, type Thresholds } from './decide-outcome.js';
 import type { JobOutcome, JobRecord, JobStore } from './job-store.js';
 import { retryPolicy, type RetryConfig } from './retry-policy.js';
@@ -33,6 +33,14 @@ class ProcessingError extends Error {
   constructor(readonly code: string) {
     super(code);
     this.name = 'ProcessingError';
+  }
+}
+
+/** The decision is stored but its audit entry is not: keep the job not-done and retry only the append (FR-054). */
+class AuditPendingError extends Error {
+  constructor(readonly result: JobOutcome) {
+    super('audit.appendFailed');
+    this.name = 'AuditPendingError';
   }
 }
 
@@ -85,15 +93,31 @@ export class VerificationService {
   /** Runs one claimed job to done, retry or exhausted. */
   async runJob(job: JobRecord): Promise<void> {
     try {
-      const result = await this.assessAndDecide(job.activityId);
-      await this.deps.store.done(job.activityId, result);
+      const result = await this.assessAndDecide(job);
+      this.noteLease(job, await this.deps.store.done(job, result));
     } catch (err) {
-      await this.failTechnically(job, err);
+      if (err instanceof AuditPendingError) await this.retryAudit(job, err.result);
+      else await this.failTechnically(job, err);
     }
   }
 
-  private async assessAndDecide(activityId: string): Promise<JobOutcome | null> {
+  /** A write that matched nothing means another worker holds the job now: do nothing more (security review S2-2). */
+  private noteLease(job: JobRecord, held: boolean): void {
+    if (!held) this.logger.warn(`Lost job lease (activityId=${job.activityId}, attempt=${job.attempts})`);
+  }
+
+  private async assessAndDecide(job: JobRecord): Promise<JobOutcome | null> {
     const { activities, types, photos, agent, thresholds } = this.deps;
+    const activityId = job.activityId;
+    // A previous attempt decided but could not write the audit entry: append it from the stored decision only.
+    // The AI is not called again and no event is published a second time (FR-015, FR-054).
+    if (job.result) {
+      const stored = job.result;
+      await this.audit(activityId, stored).catch(() => {
+        throw new AuditPendingError(stored);
+      });
+      return stored;
+    }
     const subject = await activities.getForVerification(activityId);
     // Already decided (another worker, or an earlier attempt that finished): nothing left to do.
     if (!subject || !(WAITING_STATUSES as readonly string[]).includes(subject.status)) return null;
@@ -111,36 +135,48 @@ export class VerificationService {
     const decided = await activities.decide(new Types.ObjectId(activityId), outcome.status, outcome.reasonCode);
     // Only the winning write audits and continues (FR-015, FR-028, FR-054).
     if (!decided) return null;
-    const assessedAt = this.now();
-    try {
-      await this.audit(activityId, assessment, outcome.status, assessedAt);
-    } catch (err) {
-      // The decision is already stored; do not undo or re-run it. Reported by ID only.
-      this.logger.error(`Audit append failed (activityId=${activityId}): ${err instanceof Error ? err.name : 'error'}`);
-    }
-    return {
+    const result: JobOutcome = {
       score: assessment.score,
       flags: assessment.flags,
       outcome: outcome.status,
+      steps: assessment.steps.map((s) => ({ tag: s.step, modelVersion: s.modelVersion })),
       providerId: assessment.providerId,
       modelVersions: assessment.modelVersions,
       promptVersion: assessment.promptVersion,
       schemaVersion: assessment.schemaVersion,
       aggregationVersion: assessment.aggregationVersion,
       callCount: assessment.callCount,
-      assessedAt,
+      assessedAt: this.now(),
     };
+    try {
+      await this.audit(activityId, result);
+    } catch {
+      // The decision is already stored and its events published: never undo or re-run it, only retry the append.
+      throw new AuditPendingError(result);
+    }
+    return result;
+  }
+
+  private async retryAudit(job: JobRecord, result: JobOutcome): Promise<void> {
+    this.logger.error(`Audit append failed (activityId=${job.activityId}, attempt=${job.attempts})`);
+    const decision = retryPolicy(job.attempts, this.deps.retry, this.now());
+    const code = 'audit.appendFailed';
+    const held =
+      decision.action === 'retry'
+        ? await this.deps.store.retryAt(job, decision.nextAttemptAt, code, result)
+        : await this.deps.store.exhaust(job, code);
+    this.noteLease(job, held);
   }
 
   /** Decision entry plus one entry per flag; IDs, codes and versions only (ADR-0008, FR-054). */
-  private async audit(activityId: string, a: AgentAssessment, outcome: string, at: Date): Promise<void> {
+  private async audit(activityId: string, a: JobOutcome): Promise<void> {
     const base = {
-      at,
+      at: a.assessedAt,
       recordType: 'activity',
       recordId: activityId,
       ruleVersion: RULES_VERSION,
       modelVersion: a.modelVersions.join(',') || 'none',
-      outcome,
+      outcome: a.outcome,
       score: a.score,
       providerId: a.providerId,
     };
@@ -151,7 +187,7 @@ export class VerificationService {
       schemaVersion: a.schemaVersion,
       aggregationVersion: a.aggregationVersion,
       callCount: a.callCount,
-      steps: a.steps.map((s) => ({ tag: s.step, modelVersion: s.modelVersion, providerId: a.providerId })),
+      steps: a.steps.map((s) => ({ tag: s.tag, modelVersion: s.modelVersion, providerId: a.providerId })),
       idempotencyKey: `decision:${activityId}`,
     });
     for (const flag of new Set(a.flags)) {
@@ -171,8 +207,11 @@ export class VerificationService {
     this.logger.warn(`Verification attempt ${job.attempts} failed (activityId=${job.activityId}, code=${code})`);
     const id = new Types.ObjectId(job.activityId);
     await this.deps.activities.markPending(id, decision.reasonCode);
-    if (decision.action === 'retry') await this.deps.store.retryAt(job.activityId, decision.nextAttemptAt, code);
-    else await this.deps.store.exhaust(job.activityId, code);
+    const held =
+      decision.action === 'retry'
+        ? await this.deps.store.retryAt(job, decision.nextAttemptAt, code)
+        : await this.deps.store.exhaust(job, code);
+    this.noteLease(job, held);
   }
 }
 

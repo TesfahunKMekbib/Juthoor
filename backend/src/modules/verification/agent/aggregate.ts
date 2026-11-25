@@ -1,7 +1,7 @@
 import type { ClaimFindings, EvidenceFindings, FollowupFindings, IssueCode, PhotoFlag, Verdict } from './findings.js';
 
 /** Bump when any weight, cap or rule below changes (recorded in audit, FR-054). Calibrate with the real provider (Q-C3). */
-export const AGGREGATION_VERSION = 'agg-v1';
+export const AGGREGATION_VERSION = 'agg-v2';
 
 /** Flags that always cap the score below the default accept threshold (ADR-0012 section 3). */
 export const HARD_FLAGS: readonly PhotoFlag[] = [
@@ -18,8 +18,8 @@ export const UNRELATED_CAP = 0.2;
 const QUALITY_FACTOR = { good: 1, fair: 0.85, poor: 0.6 } as const;
 const CLAIM_NO_FACTOR = 0.5;
 const CLAIM_UNCLEAR_FACTOR = 0.9;
-const FOLLOWUP_YES_FLOOR = 0.75;
 const FOLLOWUP_NO_CEIL = 0.25;
+const SEVERITY: Record<Verdict, number> = { yes: 0, unclear: 1, no: 2 };
 const CONFLICT_HIGH = 0.7;
 const CONFLICT_LOW = 0.3;
 
@@ -79,23 +79,32 @@ function resolve(input: AggregateInput): Effective {
   };
   let confidence = Math.min(evidence.confidence, claim.confidence);
   if (followup) {
-    // Follow-up answers replace the fields they ask about (ADR-0012 section 3.3).
+    // Follow-up can only make the result worse (monotone non-increasing): a "yes" never raises relevance or
+    // repairs a claim, so injected text cannot buy an accept through it (security review S2-1, ADR-0012 3.3).
     for (const { issue, verdict } of followup.answers) {
       if (issue === 'photo_relevance') {
-        if (verdict === 'yes') relevance = Math.max(relevance, FOLLOWUP_YES_FLOOR);
-        else if (verdict === 'no') relevance = Math.min(relevance, FOLLOWUP_NO_CEIL);
+        if (verdict === 'no') relevance = Math.min(relevance, FOLLOWUP_NO_CEIL);
       } else {
         const key = ISSUE_FIELD[issue];
-        if (merged[key] !== 'n_a' || verdict !== 'unclear') merged[key] = verdict;
+        const current = merged[key];
+        if (current !== 'n_a' && SEVERITY[verdict] > SEVERITY[current]) merged[key] = verdict;
       }
     }
-    confidence = followup.confidence;
+    confidence = Math.min(confidence, followup.confidence);
   }
   return { relevance, claim: merged, confidence };
 }
 
 /** Pure: findings to score 0..1, flags and reason codes. The model never supplies a decision (FR-025/026). */
 export function aggregate(input: AggregateInput): AggregateResult {
+  const result = aggregateOnce(input);
+  if (!input.followup) return result;
+  // Belt and braces: the follow-up result can never exceed the score without it.
+  const baseline = aggregateOnce({ ...input, followup: undefined });
+  return { ...result, score: Math.min(result.score, baseline.score) };
+}
+
+function aggregateOnce(input: AggregateInput): AggregateResult {
   const { evidence } = input;
   const eff = resolve(input);
   const reasonCodes: string[] = [];

@@ -8,6 +8,8 @@ import {
 import { toGeminiSchema } from './gemini-schema.js';
 
 export const GEMINI_PROVIDER_ID = 'gemini';
+/** Largest response body accepted from the provider (security review S2-6). */
+export const MAX_RESPONSE_BYTES = 1024 * 1024;
 const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 
 export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
@@ -50,6 +52,30 @@ export function buildBody(request: GenerateRequest): Record<string, unknown> {
   };
 }
 
+/** Reads the body as text, refusing more than MAX_RESPONSE_BYTES (declared or streamed). */
+async function readBounded(response: Response): Promise<string> {
+  const declared = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > MAX_RESPONSE_BYTES) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new ModelError('invalid_output', undefined, 'provider.bodyTooLarge');
+  }
+  if (!response.body) throw new Error('no body');
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_RESPONSE_BYTES) {
+      await reader.cancel().catch(() => undefined);
+      throw new ModelError('invalid_output', undefined, 'provider.bodyTooLarge');
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
 /** Gemini REST adapter (ADR-0012, NFR-023). Dev-only: production boot is blocked by assertAiProviderAllowed. */
 export class GeminiMultimodalModel implements MultimodalModel {
   private readonly fetchFn: FetchLike;
@@ -83,8 +109,9 @@ export class GeminiMultimodalModel implements MultimodalModel {
       this.assertStatus(response.status);
       let payload: GeminiResponse;
       try {
-        payload = (await response.json()) as GeminiResponse;
-      } catch {
+        payload = JSON.parse(await readBounded(response)) as GeminiResponse;
+      } catch (err) {
+        if (err instanceof ModelError) throw err;
         if (controller.signal.aborted) throw new ModelError('timeout');
         throw new ModelError('invalid_output', undefined, 'provider.badBody');
       }
