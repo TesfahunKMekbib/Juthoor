@@ -60,7 +60,7 @@ class ActivityFormController extends ChangeNotifier {
   }
 
   /// Device (GPS) location is dormant: when false the location is always
-  /// entered manually and [locationProvider] is never called (Q-E10).
+  /// entered manually and [locationProvider] is never called (FR-020 deferred).
   final bool deviceLocationEnabled;
   final ActivityApi api;
   final LocationProvider locationProvider;

@@ -25,7 +25,23 @@ see commits `58419ef`, `59cbba4`, `c9355a3`). Diff: 130 files, +21k lines (≈ 6
 | 8 | info | ARB files, `src/dev/seed.ts` | Arabic strings and seed values are drafts | Native-speaker review; owner review of seed values (Q-E5) |
 | 9 | info | PR size | Far above the < 400-line guideline | Commits are small and logical; review commit by commit, or split into the plan's PR groups |
 
+## Review — plan §7 scope change (FR-020 deferred), commits 97759c0, ef75ce9 (2026-11-25)
+Scope: backend rules/service/geo removal, Flutter controller/screen/manifest, tests, docs. Security review run
+separately on the backend diff (no findings on coordinates reaching storage, logs, events, audit or AI input).
+- Traceability: every change cites FR-012/FR-020/NFR-007/FR-054; no new fields, codes or strings; requirements untouched.
+- Rules: no `@ts-ignore`, no skipped tests, no `left/right` paddings; dormant code kept per owner (geo interface,
+  point-in-polygon, dataset provider, Flutter `LocationProvider`/`DeviceLocation`/geolocator).
+- Checks: backend typecheck/lint/unit (325 + 3 todo, branch 94.68 %)/e2e 40/40; Flutter format/analyze/test 99/99.
+
+| # | Severity | Where | Finding | Resolution |
+|---|---|---|---|---|
+| 10 | low | `spec.md` AC 3, AC 8 | Cited test names did not match the tests QA wrote; legend lacked the controller test | **Fixed**: names and `C` legend updated |
+| 11 | low | `docs/traceability.md` FR-012 | Said the app still requests GPS first until F6/F7 land | **Fixed**: reflects F6–F8 and adds the screen test path |
+| 12 | nit | `frontend/lib/state/activity_form_controller.dart:63` | Doc comment cited Q-E10 (permissions) instead of FR-020 | **Fixed** |
+| 13 | low | `backend/scripts/build.mjs:1-2` | Comment named the removed UAE dataset (security review) | **Fixed** in 97759c0 |
+| 14 | info | git history | The ODbL dataset remains in pushed commit `9ef57b5` on this branch | Squash-merge so it never reaches `main` (Q-E6) |
+| 15 | info | `activity_api_test`, ARB keys `location.outsideUae` / `coordinatesInvalid` | Kept for the dormant device path; backend no longer emits them | Intentional (owner: preserve reusable code); revisit with FR-020 |
+
 ## Open owner items
-Q-E6 geo dataset licence is ODbL 1.0 (attribution in `backend/src/modules/integration/geo/data/ATTRIBUTION.md`);
-Q-E9 `backend/.env.example` blocked by permissions (configuration table in `plan.md`); Q-A6b audit retention period;
-Q-A4b Transport/Other categories.
+Q-E9 `backend/.env.example`: placeholder file prepared; agents are blocked by the `.env.*` Read deny rule, so the owner copies it in;
+Q-A6b audit retention period; Q-A4b Transport/Other categories. Q-E6, Q-E10, Q-E11 decided 2026-11-25 (plan §7).
