@@ -68,7 +68,12 @@ Decision: GridFS adapter behind a provider-independent storage interface (NFR-02
 DB/proposal: object storage + `originalUrl` / `blurredUrl` (signed URLs). Code: GridFS `fileId`, no blurred copy.
 
 ### Q-A9 — Backend architecture shape
-Status: decided · Owner: team
+Status: decided (owner, 2026-11-25) — *"9. Accept ADR-0013 and supersede ADR-0004."* Decision: four-layer
+microservices (gateway, activity-service, verification-service, Kafka, per-service DBs, MinIO), scope Add an
+Activity (ADR-0013, `docs/features/arch-microservices/plan.md`); ADR-0004 superseded. Reopened earlier the same day
+(*"I confirm that the four-layer microservices architecture in the initial project proposal is mandatory."*).
+Previous decision kept below for history · Owner: project owner
+Previous status: decided · Owner: team
 Decision: NestJS modular monolith, domain modules in `backend/src/modules/<domain>/`, in-process events
 keyed by activityId, providers in `modules/integration/`, old layouts removed (ADR-0004, 2026-11-25).
 Proposal: API gateway + independent microservices. Repo: two incompatible layouts
@@ -206,6 +211,66 @@ Status: decided (owner, 2026-11-25) — recommendation below accepted · Was: Bl
 Owner's scope lists selection, data entry, upload, location, submission, AI verification, status display.
 Recommendation: defer server-side drafts (FR-010; FR-023 met by the form keeping its state), defer FR-024
 (already deferred by ADR-0006), and treat FR-027 replacement evidence as an optional Slice 3.
+
+## F. Microservices migration (raised 2026-11-25, ADR-0013 accepted 2026-11-25, `docs/features/arch-microservices/plan.md`)
+
+### Q-F1 — Message broker
+Status: decided (owner, 2026-11-25) — *"1. Approve Kafka, single node."* Kafka 4 KRaft, one node; client
+`@confluentinc/kafka-javascript` after package check (ADR-0013, plan §4, §12) · Was: open · Owner: project owner
+Diagram shows a Kafka icon. Options: Kafka 4 KRaft (recommended: diagram fit, per-key ordering, fan-out to future
+services; ~1 GB RAM, slower CI start), RabbitMQ (fallback: lighter), NATS JetStream, Redis Streams. Plan §4.
+
+### Q-F2 — API Gateway implementation
+Status: decided (owner, 2026-11-25) — *"2. Approve NestJS API Gateway."* Sign-in stays out of scope (*"Keep sign-in
+outside the current implementation scope."*): dev participant (ADR-0010) + authorization/ownership only (ADR-0013,
+plan §3) · Was: open · Owner: project owner
+Recommended: a NestJS gateway app reusing the ADR-0010 identity seam, error filter and `/api` contract; alternatives
+Kong / Traefik / nginx would each still need a Node auth sidecar for dev-participant resolution and identity signing. Plan §3.
+
+### Q-F3 — Photo object storage (revisits Q-A8 / ADR-0006)
+Status: decided (owner, 2026-11-25) — *"3. Approve S3-compatible MinIO storage."* ADR-0006 superseded in part (photo
+storage only; Q-A8's privacy rules stand); `@aws-sdk/client-s3` passed package check (ADR-0013, plan §12) · Was: open · Owner: project owner
+Proposal §2: "Supporting evidence such as activity photographs is stored separately using object storage." ADR-0006
+chose GridFS. Recommended: S3-compatible adapter (MinIO in Docker, `@aws-sdk/client-s3`) behind the existing
+`PhotoStorage` interface (NFR-023), GridFS kept for tests/dev. Needs an ADR-0006 supersession note if accepted.
+
+### Q-F4 — TLS for internal service, broker and database traffic (NFR-005)
+Status: decided (owner, 2026-11-25) — *"5. Enable internal TLS in accordance with NFR-005."* Option (a): server-auth
+TLS ≥ 1.2 on all internal links, runtime-generated dev CA, never committed; mTLS deferred (ADR-0013, plan §5.1) ·
+Was: open · Owner: project owner
+NFR-005 requires TLS 1.2+ for personal data on network connections. The internal subject response carries
+description, answers and emirate between services. Options: (a) TLS/mTLS on all internal links now; (b) isolated
+Docker network for dev/demo, TLS required before any production deployment (recorded as a known gap).
+
+### Q-F5 — Payment Service in the diagram but not in the approved requirements
+Status: decided (owner, 2026-11-25) — *"8. Keep Payment Service as a future service only."* Not built, no topic or
+contract until approved requirements exist (ADR-0013) · Was: open · Owner: stakeholders
+The diagram shows a Payment Service and a Payment Provider; no FR mentions payment (NFR-033 only "where applicable";
+related Q-A3). No topic or contract is defined until requirements exist.
+
+### Q-F6 — CI for Docker-based integration tests
+Status: open · Blocks: plan T11 · Owner: team (hotspot `.github/**`)
+Extends Q-E8: add `npm run test:e2e` and a job that runs `docker compose … up --wait`, `npm run test:int`, collects
+logs and tears down. Owner to confirm runner time budget (Kafka start ~20–40 s).
+
+### Q-F7 — `.env.example` per service
+Status: open · Blocks: onboarding for plan T9 · Owner: project owner
+Extends Q-E9: agents cannot write `.env*`. The variable list per service is in the plan §5; the owner creates
+`backend/apps/<svc>/.env.example` (placeholders only) or adjusts the rule.
+
+### Q-F8 — Gateway rate-limit values
+Status: open (partly verified 2026-11-25) · Blocks: production defaults only (values are configuration) · Owner: project owner
+Owner: *"7. Verify the proposed rate limits against the approved requirements before finalizing them."* Verified
+(plan §3.1): no FR/NFR fixes a number; NFR-001, NFR-027, NFR-035, NFR-036 bound them from below. Finalized
+(requirement-consistent): no global cap, no per-IP limit on identified requests, body cap derived from FR-021
+upload config. **Engineering defaults awaiting owner confirmation:** 120 req/60 s per participant, 20
+`POST /api/activities`/60 s per participant, 3,000 req/60 s per IP for requests without a participant.
+
+### Q-F9 — Shared rate-limit store before gateway scale-out (NFR-027)
+Status: open (raised 2026-11-25 by package check) · Blocks: running more than one gateway instance; not Add an Activity · Owner: project owner
+`@nestjs/throttler`'s in-memory store is per instance, so N gateways allow N× the limit. `@nest-lab/throttler-storage-redis`
+1.2.0 was rejected (peer ≤ NestJS 11). Option: a small custom store on `ioredis` (6.1.0, MIT) plus a Redis service
+(TLS per NFR-005) — not approved; needs owner decision and its own package check.
 
 ## D. Baseline technical debt (blocks strict CI)
 
