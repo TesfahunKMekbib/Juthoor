@@ -1,4 +1,4 @@
-// Builds the app: runs tsc, then copies the non-TypeScript data files tsc ignores (src/**/data/*.json,
+// Builds the app: runs tsc, then copies the non-TypeScript data files tsc ignores ({src,libs}/**/data/*.json,
 // read through import.meta.url) into the output folder. None exist while FR-020 is deferred (plan §7).
 // Usage: node scripts/build.mjs [outDir]   (default: dist)
 import { spawnSync } from 'node:child_process';
@@ -16,7 +16,7 @@ const tsc = spawnSync(
 );
 if (tsc.status !== 0) process.exit(tsc.status ?? 1);
 
-/** Finds every `*.json` that sits in a `data` folder under src. */
+/** Finds every `*.json` that sits in a `data` folder under the given directory. */
 function dataFiles(dir) {
   const found = [];
   for (const name of readdirSync(dir)) {
@@ -27,7 +27,8 @@ function dataFiles(dir) {
   return found;
 }
 
-for (const file of dataFiles(join(root, 'src'))) {
+// src/ and libs/ (plan T1: shared code moved to libs/, e.g. a future libs/integration/geo/data dataset).
+for (const file of ['src', 'libs'].flatMap((d) => dataFiles(join(root, d)))) {
   const target = join(outDir, relative(root, file));
   mkdirSync(dirname(target), { recursive: true });
   cpSync(file, target);
