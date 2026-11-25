@@ -1,0 +1,40 @@
+name: Feature task
+description: A unit of work implementing one or more approved requirements
+title: "feat: <short summary> [FR-0xx]"
+labels: ["type:feature"]
+body:
+  - type: input
+    id: requirements
+    attributes:
+      label: Requirement IDs
+      description: Approved FR/NFR IDs (docs/requirements/). Do not file features without one.
+      placeholder: FR-018, FR-021
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options: [backend, flutter, docs, ci]
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What is in and out of scope for this task.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Depends on / blocks
+      description: Other issues, open questions (Q-xx in docs/open-questions.md), API contracts.
+  - type: checkboxes
+    id: ownership
+    attributes:
+      label: Ownership
+      options:
+        - label: I will assign myself before starting and work on a branch named feat/FR-0xx-<slug>
+          required: true
