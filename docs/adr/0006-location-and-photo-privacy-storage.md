@@ -1,6 +1,6 @@
 # ADR-0006: Generalized location persistence and GridFS photo storage
 
-- Status: accepted (approved by project owner 2026-11-25)
+- Status: accepted (approved by project owner 2026-11-25). Superseded in part by ADR-0013 (photo storage → MinIO)
 - Date: 2026-11-25
 
 ## Context
