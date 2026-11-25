@@ -410,6 +410,15 @@ describe('ActivitiesService', () => {
       expect(publish.mock.calls.map((c) => c[0])).toEqual(['ActivityDecided', 'ActivityAccepted']);
       expect(publish.mock.calls[1][1]).toMatchObject({ activityTypeCode: 'tree', category: 'planting' });
     });
+    it('decide changes only status fields, never the submitted details (FR-015, AC 5)', async () => {
+      const { model, svc } = setup();
+      model.findOneAndUpdate.mockReturnValueOnce(chain(decided()));
+      await svc.decide(new Types.ObjectId(), 'rejected', 'verification.evidenceUnrelated');
+      const update = model.findOneAndUpdate.mock.calls[0][1];
+      expect(Object.keys(update).sort()).toEqual(['$push', '$set']);
+      expect(Object.keys(update.$set).sort()).toEqual(['resultReasonCode', 'status']);
+      expect(Object.keys(update.$push)).toEqual(['statusHistory']);
+    });
     it('returns null and publishes nothing when another worker already decided (FR-015, FR-028)', async () => {
       const { model, svc, publish } = setup();
       model.findOneAndUpdate.mockReturnValue(chain(null));

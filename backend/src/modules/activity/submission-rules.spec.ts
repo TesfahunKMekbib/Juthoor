@@ -131,8 +131,10 @@ describe('checkSubmission', () => {
     });
     it('accepts coordinate boundaries', () =>
       expect(fields(valid({ location: { source: 'device', coordinates: { lat: 90, lng: -180 } } }))).toEqual([]));
-    // outsideUae needs the geo provider (B4b); it is produced by the service, not by this pure function.
-    it.todo('validates coordinates against UAE boundaries and program geofence (FR-020)');
+    // The UAE boundary check (outsideUae) lives in the service via the geo provider and is tested in
+    // activities.service.spec.ts, dataset-geo-boundary-provider.spec.ts and the e2e suite.
+    // Program geofences need campaigns/challenges (FR-013), which are out of scope this phase.
+    it.todo('validates coordinates against a linked program geofence (FR-020, deferred with FR-013)');
   });
 
   describe('answers (FR-011, FR-018)', () => {
