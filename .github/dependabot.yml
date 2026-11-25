@@ -1,21 +1,21 @@
-# Dependabot reads this file from the DEFAULT branch (main). It becomes active once the
-# factory is merged into main.
+# Dependabot reads this file from the DEFAULT branch (main).
+# Version updates are DISABLED (owner decision 2026-11-25): open-pull-requests-limit: 0 stops all
+# version-update PRs. Dependabot security alerts and security updates stay enabled in the repository
+# settings and are not affected by this limit. To re-enable version updates, raise the limits again.
 version: 2
 updates:
   - package-ecosystem: npm
     directory: /backend
     schedule: { interval: weekly }
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     commit-message: { prefix: chore, include: scope }
-    groups:
-      dev-tooling:
-        dependency-type: development
   - package-ecosystem: pub
     directory: /frontend
     schedule: { interval: weekly }
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 0
     commit-message: { prefix: chore, include: scope }
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: monthly }
+    open-pull-requests-limit: 0
     commit-message: { prefix: ci }
