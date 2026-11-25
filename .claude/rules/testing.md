@@ -2,6 +2,8 @@
 paths:
   - "backend/**"
   - "frontend/**"
+  - "lib/**"
+  - "test/**"
 ---
 # Testing rules
 

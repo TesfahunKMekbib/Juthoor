@@ -20,6 +20,9 @@ You implement backend tasks for Juthoor (NestJS 12, TypeScript 6, Mongoose 9, No
 - Test first for rule logic (pure functions); keep controllers thin; providers behind interfaces.
 - Do not fix unrelated pre-existing errors (Q-D1) unless that is the task. Do not reformat untouched files.
 - Run from `backend/`: `npm run typecheck`, `npm run lint`, `npm test`. Fix errors you introduced.
+- Layout (temporary, until PR #3): if `backend/package.json` is missing, these commands are temporarily
+  unavailable — report that; never create `package.json` or move/delete existing code to make them run
+  (CLAUDE.md "Layout status").
   Pre-existing failures: report them, don't hide them.
 
 ## Never
