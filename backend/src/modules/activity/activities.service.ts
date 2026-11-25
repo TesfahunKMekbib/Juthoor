@@ -1,14 +1,17 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  NotFoundException,
-  UnprocessableEntityException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'node:crypto';
 import { isValidObjectId, Model, Types } from 'mongoose';
+import type { FieldCipher } from '../../common/crypto/field-cipher.js';
+import { type ErrorDetail, ValidationFailedException } from '../../common/errors/validation-failed.exception.js';
 import { EventsService } from '../../common/events/events.service.js';
+import {
+  EVIDENCE_SANITIZER,
+  EvidenceRejectedError,
+  type EvidenceSanitizer,
+  type SanitizedEvidence,
+} from '../integration/image/evidence-sanitizer.js';
+import { detectImageType } from '../integration/image/image-signature.js';
 import {
   PHOTO_STORAGE,
   type PhotoStorage,
@@ -16,7 +19,8 @@ import {
   type StoredPhoto,
 } from '../integration/storage/photo-storage.js';
 import { ActivityTypesService, type ActivityTypeRecord } from './activity-types.service.js';
-import { Activity, ACTIVITY_STATUSES, type ActivityStatus } from './activity.schema.js';
+import { Activity, ACTIVITY_STATUSES, type ActivityLocation, type ActivityStatus } from './activity.schema.js';
+import { LOCATION_CIPHER } from './activity.tokens.js';
 import { checkSubmission, type SubmissionInput } from './submission-rules.js';
 
 type ActivityRecord = Activity & {
@@ -26,15 +30,44 @@ type ActivityRecord = Activity & {
 };
 type TypeRecord = ActivityTypeRecord;
 
+/** Statuses from which verification may still decide (ADR-0005, FR-028). */
+export const WAITING_STATUSES = ['submitted', 'pending_technical_processing'] as const;
+export type DecidedStatus = 'accepted' | 'returned_for_correction' | 'rejected';
+
+export interface VerificationSubject {
+  id: string;
+  userId: string;
+  activityTypeId: string;
+  status: ActivityStatus;
+  description: string;
+  doneAt: Date;
+  answers: Record<string, string | number>;
+  amount: { value: number; unit: string };
+  photos: { fileId: Types.ObjectId; kind: string; mimeType: string }[];
+  emirate: string;
+}
+
+const MB = 1024 * 1024;
+const MAX_PHOTO_DIMENSION = 2560;
+
 @Injectable()
 export class ActivitiesService {
+  private readonly logger = new Logger(ActivitiesService.name);
+
   constructor(
     @InjectModel(Activity.name) private readonly activities: Model<Activity>,
     private readonly types: ActivityTypesService,
     @Inject(PHOTO_STORAGE) private readonly photos: PhotoStorage,
     private readonly events: EventsService,
+    @Inject(EVIDENCE_SANITIZER) private readonly sanitizer: EvidenceSanitizer,
+    @Inject(LOCATION_CIPHER) private readonly cipher: FieldCipher,
   ) {}
 
+  /**
+   * Plan section 3 order: idempotency (FR-015), pure rules (FR-018-021, FR-023) incl. manual location (FR-012),
+   * sanitize (FR-021, NFR-008), store, save, publish. Deterministic failures create no record (Q-E3).
+   * A file's real type comes from its leading bytes; the client's MIME type is ignored (FR-021).
+   */
   async submit(userId: string, rawData: string | undefined, files: PhotoToStore[], submitKeyHeader?: string) {
     const input = this.parseData(rawData);
     const submitKey = (submitKeyHeader ?? '').trim().slice(0, 100) || randomUUID();
@@ -44,22 +77,43 @@ export class ActivitiesService {
     if (existing) return { created: false, activity: await this.toView(existing) };
 
     if (typeof input.activityTypeId !== 'string' || !isValidObjectId(input.activityTypeId)) {
-      throw this.validationError([{ field: 'activityTypeId', message: 'Please choose an activity type.' }]);
+      throw new ValidationFailedException([
+        { field: 'activityTypeId', code: 'activityType.required', message: 'Please choose an activity type.' },
+      ]);
     }
     const type = await this.types.findById(input.activityTypeId);
     if (type.status !== 'published') {
-      throw this.validationError([{ field: 'activityTypeId', message: 'This activity type is not available.' }]);
+      throw new ValidationFailedException([
+        { field: 'activityTypeId', code: 'activityType.unavailable', message: 'This activity type is not available.' },
+      ]);
     }
 
-    const { errors, clean } = checkSubmission(type, input, files);
-    if (!clean) throw this.validationError(errors);
+    const { errors, clean } = checkSubmission(
+      type,
+      input,
+      files.map((f) => ({ mimetype: detectImageType(f.buffer) ?? 'application/octet-stream', size: f.size })),
+    );
+    if (!clean) throw new ValidationFailedException(errors);
+
+    // The manual emirate was validated by the rules (FR-012); GPS lookup (FR-020) is deferred to the next phase.
+    const emirate = clean.location.emirate;
+
+    // Re-encode every photo: EXIF/GPS dropped, file name generated (NFR-007, NFR-008).
+    const clearPhotos = await this.sanitizeAll(files, type.photoRules.maxSizeMB * MB);
+    const location: ActivityLocation = { emirate, area: clean.location.area };
+    const locationEnc = this.cipher.encryptJson(location);
 
     // Store the photos, then the activity. If saving the activity fails, remove the photos again.
     const stored: StoredPhoto[] = [];
     let record: ActivityRecord;
     try {
-      for (const [i, file] of files.entries()) {
-        stored.push(await this.photos.save(file, { userId, kind: clean.photoKinds[i] }));
+      for (const [i, photo] of clearPhotos.entries()) {
+        stored.push(
+          await this.photos.save(
+            { originalname: photo.fileName, mimetype: photo.mimeType, size: photo.sizeBytes, buffer: photo.buffer },
+            { userId, kind: clean.photoKinds[i] },
+          ),
+        );
       }
       const now = new Date();
       const created = await this.activities.create({
@@ -68,13 +122,13 @@ export class ActivitiesService {
         typeVersion: type.version,
         description: clean.description,
         doneAt: clean.doneAt,
-        location: clean.location,
+        locationEnc,
         answers: clean.answers,
         amount: { value: clean.amountValue, unit: type.amount.unit },
         photos: stored.map((p, i) => ({ ...p, kind: clean.photoKinds[i], uploadedAt: now })),
         status: 'submitted',
         submitKey,
-        statusHistory: [{ from: null, to: 'submitted', reason: '', at: now }],
+        statusHistory: [{ from: null, to: 'submitted', reasonCode: null, at: now }],
         submittedAt: now,
       });
       record = created.toObject() as ActivityRecord;
@@ -96,17 +150,57 @@ export class ActivitiesService {
       activityTypeCode: type.code,
       category: type.category,
       amount: record.amount,
-      emirate: record.location.emirate,
+      emirate,
       doneAt: record.doneAt,
     });
     return { created: true, activity: await this.toView(record, type) };
   }
 
-  async listForUser(userId: string, status?: string) {
+  private async sanitizeAll(files: PhotoToStore[], maxBytes: number): Promise<SanitizedEvidence[]> {
+    const out: SanitizedEvidence[] = [];
+    const errors: ErrorDetail[] = [];
+    for (const [i, file] of files.entries()) {
+      try {
+        out.push(await this.sanitizer.sanitize(file.buffer, { maxBytes, maxDimension: MAX_PHOTO_DIMENSION }));
+      } catch (err) {
+        if (!(err instanceof EvidenceRejectedError)) throw err;
+        errors.push({
+          field: `photos[${i}]`,
+          code: `photos.${err.code}`,
+          message: 'This photo cannot be used. Please choose another one.',
+        });
+      }
+    }
+    if (errors.length) throw new ValidationFailedException(errors);
+    return out;
+  }
+
+  /** The bytes of one photo of the caller's own activity; anything else is a 404 (NFR-009, NFR-025). */
+  async getPhotoForUser(userId: string, activityId: string, photoId: string) {
+    const notFound = () => new NotFoundException({ code: 'photo.notFound', message: 'Photo not found' });
+    if (!isValidObjectId(activityId) || !isValidObjectId(photoId)) throw notFound();
+    const fileId = new Types.ObjectId(photoId);
+    const owned = await this.activities
+      .findOne({
+        _id: new Types.ObjectId(activityId),
+        userId: new Types.ObjectId(userId),
+        'photos.fileId': fileId,
+      })
+      .lean<ActivityRecord>();
+    if (!owned) throw notFound();
+    const file = await this.photos.read(fileId);
+    if (!file) throw notFound();
+    return file;
+  }
+
+  async listForUser(userId: string, status?: unknown) {
     const filter: Record<string, unknown> = { userId: new Types.ObjectId(userId) };
-    if (status) {
-      if (!(ACTIVITY_STATUSES as readonly string[]).includes(status)) throw new BadRequestException('Unknown status');
-      filter.status = status;
+    if (status !== undefined && status !== '') {
+      // Whitelist (backend.md, NoSQL operator injection): the filter gets our own constant, never the
+      // client's value, so a query object such as ?status[$ne]=x can never reach Mongo.
+      const known = ACTIVITY_STATUSES.find((s) => s === status);
+      if (!known) throw new BadRequestException('Unknown status');
+      filter.status = known;
     }
     const list = await this.activities.find(filter).sort({ submittedAt: -1 }).limit(100).lean<ActivityRecord[]>();
     const types = await this.types.findByIds([...new Set(list.map((a) => String(a.activityTypeId)))]);
@@ -120,23 +214,112 @@ export class ActivitiesService {
           .findOne({ _id: new Types.ObjectId(id), userId: new Types.ObjectId(userId) })
           .lean<ActivityRecord>()
       : null;
-    if (!activity) throw new NotFoundException('Activity not found');
+    if (!activity) throw new NotFoundException({ code: 'activity.notFound', message: 'Activity not found' });
     return this.toView(activity);
   }
 
-  /** Moves an activity to a final status, only if it is still waiting. Used by the checker. */
-  async decide(activityId: Types.ObjectId, to: Exclude<ActivityStatus, 'submitted'>, reason: string) {
+  /**
+   * Moves an activity to a final status from submitted or pending_technical_processing. The update is
+   * conditional on the current status, so with several workers only the winning write returns a record
+   * and publishes events; losers get null (FR-015, FR-028). ActivityAccepted is published only for accepted
+   * (FR-032, FR-046). Reason codes are stored on the status history (plan section 4).
+   */
+  async decide(activityId: Types.ObjectId, to: DecidedStatus, reasonCode: string | null) {
     const now = new Date();
-    return this.activities
+    let record: ActivityRecord | null = null;
+    for (const from of WAITING_STATUSES) {
+      record = await this.activities
+        .findOneAndUpdate(
+          { _id: activityId, status: from },
+          {
+            $set: { status: to, resultReasonCode: reasonCode },
+            $push: { statusHistory: { from, to, reasonCode, at: now } },
+          },
+          { returnDocument: 'after' },
+        )
+        .lean<ActivityRecord>();
+      if (record) break;
+    }
+    if (!record) return null;
+    const id = String(record._id);
+    const userId = String(record.userId);
+    this.events.publish('ActivityDecided', { activityId: id, userId, status: to, reasonCode, decidedAt: now });
+    if (to === 'accepted') {
+      const type = await this.types.findById(String(record.activityTypeId)).catch(() => undefined);
+      if (type) {
+        this.events.publish('ActivityAccepted', {
+          activityId: id,
+          userId,
+          activityTypeCode: type.code,
+          category: type.category,
+          amount: { value: record.amount.value, unit: record.amount.unit },
+          doneAt: record.doneAt,
+        });
+      } else {
+        this.logger.error(`ActivityAccepted not published: type missing (activityId=${id})`);
+      }
+    }
+    return record;
+  }
+
+  /**
+   * Technical failure: the activity waits in pending_technical_processing (FR-028). From submitted it moves
+   * and records history once; if already pending only the reason code changes (retrying -> failedPermanently).
+   */
+  async markPending(activityId: Types.ObjectId, reasonCode: string) {
+    const now = new Date();
+    const moved = await this.activities
       .findOneAndUpdate(
         { _id: activityId, status: 'submitted' },
         {
-          $set: { status: to, resultReason: reason },
-          $push: { statusHistory: { from: 'submitted', to, reason, at: now } },
+          $set: { status: 'pending_technical_processing', resultReasonCode: reasonCode },
+          $push: {
+            statusHistory: { from: 'submitted', to: 'pending_technical_processing', reasonCode, at: now },
+          },
         },
         { returnDocument: 'after' },
       )
       .lean<ActivityRecord>();
+    if (moved) return moved;
+    return this.activities
+      .findOneAndUpdate(
+        { _id: activityId, status: 'pending_technical_processing', resultReasonCode: { $ne: reasonCode } },
+        {
+          $set: { resultReasonCode: reasonCode },
+          $push: {
+            statusHistory: {
+              from: 'pending_technical_processing',
+              to: 'pending_technical_processing',
+              reasonCode,
+              at: now,
+            },
+          },
+        },
+        { returnDocument: 'after' },
+      )
+      .lean<ActivityRecord>();
+  }
+
+  /**
+   * What the verification worker needs. Internal use only (never an HTTP view): the emirate comes from the
+   * encrypted location; coordinates are never stored (NFR-004, NFR-007).
+   */
+  async getForVerification(activityId: string): Promise<VerificationSubject | null> {
+    if (!isValidObjectId(activityId)) return null;
+    const a = await this.activities.findOne({ _id: new Types.ObjectId(activityId) }).lean<ActivityRecord>();
+    if (!a) return null;
+    return {
+      id: String(a._id),
+      userId: String(a.userId),
+      activityTypeId: String(a.activityTypeId),
+      status: a.status,
+      description: a.description,
+      doneAt: a.doneAt,
+      answers: a.answers ?? {},
+      amount: { value: a.amount.value, unit: a.amount.unit },
+      photos: a.photos.map((p) => ({ fileId: p.fileId, kind: p.kind, mimeType: p.mimeType })),
+      emirate: this.decryptLocation(a)?.emirate ?? '',
+    };
   }
 
   findWaiting(submittedBefore: Date, limit = 20) {
@@ -148,55 +331,66 @@ export class ActivitiesService {
   }
 
   private parseData(raw: string | undefined): SubmissionInput {
-    if (!raw) throw new BadRequestException('Missing "data" field with the activity details (JSON).');
+    if (!raw)
+      throw new BadRequestException({
+        code: 'request.malformed',
+        message: 'Missing "data" field with the activity details (JSON).',
+      });
     try {
       const parsed: unknown = JSON.parse(raw);
       if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error();
       return parsed as SubmissionInput;
     } catch {
-      throw new BadRequestException('"data" must be a JSON object.');
+      throw new BadRequestException({ code: 'request.malformed', message: '"data" must be a JSON object.' });
     }
   }
 
-  private validationError(errors: { field: string; message: string }[]) {
-    return new UnprocessableEntityException({
-      statusCode: 422,
-      message: 'Please fix the highlighted fields.',
-      errors,
-    });
+  /** Owner-only: the location is decrypted here, so this must never serve anyone but the owner (NFR-004). */
+  private decryptLocation(a: ActivityRecord): ActivityLocation | null {
+    try {
+      return this.cipher.decryptJson<ActivityLocation>(a.locationEnc);
+    } catch {
+      this.logger.error(`Location could not be decrypted (activityId=${String(a._id)})`);
+      return null;
+    }
   }
 
-  /** The shape the app receives. */
+  /** The shape the app receives (plan section 1). */
   private async toView(a: ActivityRecord, type?: TypeRecord) {
     const t = type ?? (await this.types.findById(String(a.activityTypeId)).catch(() => undefined));
     const labels = new Map((t?.formFields ?? []).map((f) => [f.key, f.label]));
+    const id = String(a._id);
     return {
-      id: String(a._id),
+      id,
       status: a.status,
-      resultReason: a.resultReason,
+      resultReasonCode: a.resultReasonCode ?? null,
       activityType: t
         ? { id: String(t._id), code: t.code, category: t.category, name: t.name }
         : { id: String(a.activityTypeId), code: '', category: '', name: { en: 'Unknown', ar: 'غير معروف' } },
       description: a.description,
       doneAt: a.doneAt,
-      location: a.location,
+      location: this.decryptLocation(a),
       answers: Object.entries(a.answers ?? {}).map(([key, value]) => ({
         key,
         label: labels.get(key) ?? { en: key, ar: key },
         value,
       })),
-      amount: a.amount,
+      amount: { value: a.amount.value, unit: a.amount.unit },
+      acceptedAmount: a.status === 'accepted' ? { value: a.amount.value, unit: a.amount.unit } : null,
       photos: a.photos.map((p) => ({
         id: String(p.fileId),
         kind: p.kind,
-        url: `/api/photos/${String(p.fileId)}`,
-        fileName: p.fileName,
+        url: `/api/activities/${id}/photos/${String(p.fileId)}`,
         mimeType: p.mimeType,
         sizeBytes: p.sizeBytes,
       })),
-      statusHistory: a.statusHistory.map(({ from, to, reason, at }) => ({ from, to, reason, at })),
+      statusHistory: a.statusHistory.map(({ from, to, reasonCode, at }) => ({
+        from,
+        to,
+        reasonCode: reasonCode ?? null,
+        at,
+      })),
       submittedAt: a.submittedAt,
-      createdAt: a.createdAt,
       updatedAt: a.updatedAt,
     };
   }

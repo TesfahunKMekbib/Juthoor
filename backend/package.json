@@ -9,13 +9,16 @@
     "node": ">=24"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "node scripts/build.mjs",
+    "seed:dev": "node scripts/build.mjs && node --env-file-if-exists=.env dist/src/dev/seed.js",
+    "typecheck":"tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"**/*.ts\"",
     "format:check": "prettier --check \"**/*.ts\"",
-    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --passWithNoTests",
-    "test:cov": "node --experimental-vm-modules node_modules/jest/bin/jest.js --passWithNoTests --coverage",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --passWithNoTests --testPathIgnorePatterns \"/node_modules/\" \"/dist/\" \"\\.e2e-spec\\.ts$\"",
+    "test:cov": "node --experimental-vm-modules node_modules/jest/bin/jest.js --passWithNoTests --coverage --testPathIgnorePatterns \"/node_modules/\" \"/dist/\" \"\\.e2e-spec\\.ts$\"",
+    "test:e2e": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.e2e.config.cjs --runInBand",
     "verify": "npm run typecheck && npm run lint && npm run test:cov"
   },
   "dependencies": {
@@ -25,7 +28,8 @@
     "@nestjs/platform-express": "^12.6.0",
     "mongoose": "^9.12.3",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.2"
+    "rxjs": "^7.8.2",
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

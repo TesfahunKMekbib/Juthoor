@@ -16,4 +16,28 @@ export default tseslint.config(
       'no-console': ['warn', { allow: ['warn', 'error'] }],
     },
   },
+  {
+    // CommonJS config files (ADR-0003: `.cjs` must stay CommonJS) may use require().
+    files: ['**/*.cjs'],
+    languageOptions: { sourceType: 'commonjs' },
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
+  },
+  {
+    // ADR-0010: nothing outside src/dev may import the development participant.
+    files: ['**/*.ts'],
+    ignores: ['src/dev/**', 'src/app.module.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/dev/**', '**/dev'],
+              message: 'src/dev is development-only; only app.module.ts may load it (ADR-0010).',
+            },
+          ],
+        },
+      ],
+    },
+  },
 );

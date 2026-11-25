@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:provider/provider.dart';
 import 'l10n/app_localizations.dart';
+import 'services/activity_api.dart';
+import 'services/device_services.dart';
 import 'screens/home_screen.dart';
 
 /// In-app language override. `null` follows the device locale (NFR-016).
@@ -16,7 +19,19 @@ void main() {
       statusBarBrightness: Brightness.dark,
     ),
   );
-  runApp(const JuthoorApp());
+  runApp(
+    MultiProvider(
+      providers: [
+        // Base URL: --dart-define=API_BASE_URL (see defaultApiBaseUrl).
+        Provider<ActivityApi>(create: (_) => HttpActivityApi()),
+        Provider<LocationProvider>(
+          create: (_) => const GeolocatorLocationProvider(),
+        ),
+        Provider<PhotoPicker>(create: (_) => ImagePickerPhotoPicker()),
+      ],
+      child: const JuthoorApp(),
+    ),
+  );
 }
 
 class JuthoorApp extends StatelessWidget {

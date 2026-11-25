@@ -1,7 +1,10 @@
 import { jest } from '@jest/globals';
+import sharp from 'sharp';
 import { BadRequestException, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { Types } from 'mongoose';
+import { createLocationCipher } from '../../common/config/app-config.js';
 import { EventsService } from '../../common/events/events.service.js';
+import { SharpEvidenceSanitizer } from '../integration/image/sharp-evidence-sanitizer.js';
 import { InMemoryPhotoStorage } from '../integration/storage/in-memory-photo-storage.js';
 import { ActivitiesService } from './activities.service.js';
 
@@ -22,13 +25,22 @@ const type = {
   amount: { unit: 'trees', min: 1, max: 10 },
   photoRules: { minPhotos: 1, maxPhotos: 2, neededKinds: [], maxSizeMB: 1 },
 };
-const file = { originalname: 'a.jpg', mimetype: 'image/jpeg', size: 3, buffer: Buffer.from([1, 2, 3]) };
+const cipher = createLocationCipher('ab'.repeat(32));
+let file: { originalname: string; mimetype: string; size: number; buffer: Buffer };
+const jpeg = (withExif = false) => {
+  const img = sharp({ create: { width: 16, height: 16, channels: 3, background: '#2a7' } }).jpeg();
+  return (withExif ? img.withExif({ IFD0: { Copyright: 'secret-owner' } }) : img).toBuffer();
+};
+beforeAll(async () => {
+  const buffer = await jpeg();
+  file = { originalname: 'a.jpg', mimetype: 'image/jpeg', size: buffer.length, buffer };
+});
 const data = (over: Record<string, unknown> = {}) =>
   JSON.stringify({
     activityTypeId: String(typeId),
     description: 'Planted',
     doneAt: '2020-01-01T00:00:00Z',
-    location: { emirate: 'Dubai', area: '' },
+    location: { source: 'manual', emirate: 'Dubai', area: '' },
     amount: { value: 2 },
     ...over,
   });
@@ -46,7 +58,7 @@ const storedActivity = (over: Record<string, unknown> = {}) => ({
   status: 'submitted',
   description: 'Planted',
   doneAt: new Date(),
-  location: { emirate: 'Dubai', area: '' },
+  locationEnc: cipher.encryptJson({ emirate: 'Dubai', area: 'Marina' }),
   answers: { x: 1 },
   amount: { value: 2, unit: 'trees' },
   photos: [],
@@ -72,6 +84,8 @@ function setup() {
     types as unknown as ConstructorParameters<typeof ActivitiesService>[1],
     photos,
     events,
+    new SharpEvidenceSanitizer(),
+    cipher,
   );
   return { model, types, photos, publish, svc };
 }
@@ -113,26 +127,123 @@ describe('ActivitiesService', () => {
       );
     });
 
-    it('rejects an invalid activity type id with 422', async () => {
+    it('rejects an invalid activity type id with 422 activityType.required', async () => {
       const { model, svc } = setup();
       model.findOne.mockReturnValue(chain(null));
-      await expect(svc.submit(userId, data({ activityTypeId: 'bad' }), [file], 'k')).rejects.toBeInstanceOf(
-        UnprocessableEntityException,
-      );
+      const p = svc.submit(userId, data({ activityTypeId: 'bad' }), [file], 'k');
+      await expect(p).rejects.toBeInstanceOf(UnprocessableEntityException);
+      await expect(p).rejects.toMatchObject({ errors: [{ field: 'activityTypeId', code: 'activityType.required' }] });
     });
 
     it('rejects an unpublished activity type with 422', async () => {
       const { model, types, svc } = setup();
       model.findOne.mockReturnValue(chain(null));
       types.findById.mockResolvedValue({ ...type, status: 'draft' });
-      await expect(svc.submit(userId, data(), [file], 'k')).rejects.toBeInstanceOf(UnprocessableEntityException);
+      const p = svc.submit(userId, data(), [file], 'k');
+      await expect(p).rejects.toBeInstanceOf(UnprocessableEntityException);
+      await expect(p).rejects.toMatchObject({ errors: [{ code: 'activityType.unavailable' }] });
+    });
+
+    it('stores the manual emirate only in encrypted form, never stray coordinates (FR-012, NFR-004, NFR-007)', async () => {
+      const { model, svc, publish } = setup();
+      model.findOne.mockReturnValue(chain(null));
+      model.create.mockResolvedValue({ toObject: () => storedActivity() });
+      const loc = { source: 'manual', emirate: 'Abu Dhabi', area: 'Reem', coordinates: { lat: 24.4539, lng: 54.3773 } };
+      await svc.submit(userId, data({ location: loc }), [file], 'k');
+      const doc = model.create.mock.calls[0][0];
+      const json = JSON.stringify(doc);
+      expect(json).not.toContain('24.45');
+      expect(json).not.toContain('54.37');
+      expect(json).not.toContain('coordinates');
+      expect(doc.location).toBeUndefined();
+      expect(cipher.decryptJson(doc.locationEnc)).toEqual({ emirate: 'Abu Dhabi', area: 'Reem' });
+      expect(JSON.stringify(publish.mock.calls)).not.toContain('24.45');
+    });
+
+    it('refuses a device location this phase and stores nothing (FR-020 deferred, Q-E3)', async () => {
+      const { model, svc, photos } = setup();
+      model.findOne.mockReturnValue(chain(null));
+      const loc = { source: 'device', coordinates: { lat: 24.4539, lng: 54.3773 } };
+      await expect(svc.submit(userId, data({ location: loc }), [file], 'k')).rejects.toMatchObject({
+        errors: [{ field: 'location.source', code: 'location.sourceInvalid' }],
+      });
+      expect(model.create).not.toHaveBeenCalled();
+      expect(photos.files.size).toBe(0);
+    });
+
+    it('rejects a spoofed MIME type: the bytes decide, not the header (FR-021)', async () => {
+      const { model, svc, photos } = setup();
+      model.findOne.mockReturnValue(chain(null));
+      const fake = { originalname: 'x.jpg', mimetype: 'image/jpeg', size: 5, buffer: Buffer.from('<?php') };
+      await expect(svc.submit(userId, data(), [fake], 'k')).rejects.toMatchObject({
+        errors: [{ field: 'photos[0]', code: 'photos.typeNotAllowed' }],
+      });
+      expect(photos.files.size).toBe(0);
+    });
+
+    it('ignores a wrong client MIME type when the bytes are a real image (FR-021)', async () => {
+      const { model, svc } = setup();
+      model.findOne.mockReturnValue(chain(null));
+      model.create.mockResolvedValue({ toObject: () => storedActivity() });
+      const r = await svc.submit(userId, data(), [{ ...file, mimetype: 'application/octet-stream' }], 'k');
+      expect(r.created).toBe(true);
+    });
+
+    it('reports an unreadable image as photos.unreadable (FR-021)', async () => {
+      const { model, svc, photos } = setup();
+      model.findOne.mockReturnValue(chain(null));
+      const truncated = { ...file, buffer: file.buffer.subarray(0, 40), size: 40 };
+      await expect(svc.submit(userId, data(), [truncated], 'k')).rejects.toMatchObject({
+        errors: [{ field: 'photos[0]', code: 'photos.unreadable' }],
+      });
+      expect(photos.files.size).toBe(0);
+    });
+
+    it('rethrows unexpected sanitizer failures', async () => {
+      const { model, svc } = setup();
+      model.findOne.mockReturnValue(chain(null));
+      jest.spyOn(SharpEvidenceSanitizer.prototype, 'sanitize').mockRejectedValueOnce(new Error('boom'));
+      await expect(svc.submit(userId, data(), [file], 'k')).rejects.toThrow('boom');
+    });
+
+    it('stores a re-encoded copy without EXIF and with a generated name (NFR-007, NFR-008)', async () => {
+      const { model, svc, photos } = setup();
+      model.findOne.mockReturnValue(chain(null));
+      model.create.mockResolvedValue({ toObject: () => storedActivity() });
+      const withExif = await jpeg(true);
+      expect((await sharp(withExif).metadata()).exif).toBeDefined();
+      await svc.submit(
+        userId,
+        data(),
+        [{ originalname: 'IMG_home_address.jpg', mimetype: 'image/jpeg', size: withExif.length, buffer: withExif }],
+        'k',
+      );
+      const [saved] = [...photos.files.values()];
+      expect((await sharp(saved.buffer).metadata()).exif).toBeUndefined();
+      expect(saved.buffer.includes(Buffer.from('secret-owner'))).toBe(false);
+      const doc = model.create.mock.calls[0][0];
+      expect(doc.photos[0].fileName).toMatch(/^[0-9a-f-]{36}\.jpg$/);
+      expect(JSON.stringify(doc)).not.toContain('IMG_home_address');
+    });
+
+    it('rejects a photo above the type size limit (FR-021)', async () => {
+      const { model, svc, types } = setup();
+      model.findOne.mockReturnValue(chain(null));
+      types.findById.mockResolvedValue({ ...type, photoRules: { ...type.photoRules, maxSizeMB: 0.00001 } });
+      await expect(svc.submit(userId, data(), [file], 'k')).rejects.toMatchObject({
+        errors: [{ code: 'photos.tooLarge' }],
+      });
     });
 
     it('rejects rule violations with 422 field errors and stores nothing (FR-023)', async () => {
       const { model, svc, photos } = setup();
       model.findOne.mockReturnValue(chain(null));
       await expect(svc.submit(userId, data({ description: '' }), [file], 'k')).rejects.toMatchObject({
-        response: { statusCode: 422, errors: [{ field: 'description' }] },
+        response: {
+          statusCode: 422,
+          code: 'validation.failed',
+          errors: [{ field: 'description', code: 'description.required' }],
+        },
       });
       expect(photos.files.size).toBe(0);
     });
@@ -175,6 +286,12 @@ describe('ActivitiesService', () => {
     it('rejects an unknown status', async () => {
       await expect(setup().svc.listForUser(userId, 'bogus')).rejects.toBeInstanceOf(BadRequestException);
     });
+    it('rejects a query-operator object as status and never queries with it (NoSQL injection)', async () => {
+      const { model, svc } = setup();
+      await expect(svc.listForUser(userId, { $ne: 'rejected' })).rejects.toBeInstanceOf(BadRequestException);
+      await expect(svc.listForUser(userId, ['accepted'])).rejects.toBeInstanceOf(BadRequestException);
+      expect(model.find).not.toHaveBeenCalled();
+    });
     it('filters by a valid status and returns views', async () => {
       const { model, svc } = setup();
       model.find.mockReturnValue(chain([storedActivity({ status: 'accepted' })]));
@@ -200,6 +317,26 @@ describe('ActivitiesService', () => {
       model.findOne.mockReturnValue(chain(null));
       await expect(svc.getForUser(userId, String(new Types.ObjectId()))).rejects.toBeInstanceOf(NotFoundException);
     });
+    it('returns the decrypted location, owner photo url and reason codes only to the owner (NFR-009)', async () => {
+      const { model, svc } = setup();
+      const fileId = new Types.ObjectId();
+      const rec = storedActivity({
+        status: 'accepted',
+        resultReasonCode: null,
+        photos: [{ kind: 'photo', fileId, fileName: 'g.jpg', mimeType: 'image/jpeg', sizeBytes: 9 }],
+      });
+      model.findOne.mockReturnValue(chain(rec));
+      const v = await svc.getForUser(userId, String(rec._id));
+      expect(v.location).toEqual({ emirate: 'Dubai', area: 'Marina' });
+      expect(v.photos[0].url).toBe(`/api/activities/${String(rec._id)}/photos/${String(fileId)}`);
+      expect(v.acceptedAmount).toEqual({ value: 2, unit: 'trees' });
+      expect(model.findOne.mock.calls[0][0]).toMatchObject({ userId: new Types.ObjectId(userId) });
+    });
+    it('returns a null location when decryption fails', async () => {
+      const { model, svc } = setup();
+      model.findOne.mockReturnValue(chain(storedActivity({ locationEnc: { v: 1, iv: 'a', tag: 'b', ct: 'c' } })));
+      expect((await svc.getForUser(userId, String(new Types.ObjectId()))).location).toBeNull();
+    });
     it('falls back to an Unknown type when the type is gone', async () => {
       const { model, types, svc } = setup();
       types.findById.mockRejectedValue(new NotFoundException());
@@ -210,13 +347,126 @@ describe('ActivitiesService', () => {
     });
   });
 
-  describe('decide / findWaiting', () => {
-    it('only transitions from submitted', async () => {
+  describe('getPhotoForUser (NFR-009, NFR-025)', () => {
+    const fileId = new Types.ObjectId();
+    it('returns the bytes to the owner', async () => {
+      const { model, svc, photos } = setup();
+      photos.files.set(String(fileId), {
+        buffer: Buffer.from('img'),
+        mimeType: 'image/jpeg',
+        meta: { userId, kind: 'photo' },
+      });
+      model.findOne.mockReturnValue(chain(storedActivity()));
+      const r = await svc.getPhotoForUser(userId, String(new Types.ObjectId()), String(fileId));
+      expect(r.mimeType).toBe('image/jpeg');
+      expect(model.findOne.mock.calls[0][0]).toMatchObject({
+        userId: new Types.ObjectId(userId),
+        'photos.fileId': fileId,
+      });
+    });
+    it('404s for another owner, an unknown photo, bad ids, or a missing file', async () => {
       const { model, svc } = setup();
-      model.findOneAndUpdate.mockReturnValue(chain(storedActivity({ status: 'accepted' })));
+      model.findOne.mockReturnValue(chain(null));
+      await expect(svc.getPhotoForUser(userId, String(new Types.ObjectId()), String(fileId))).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      await expect(svc.getPhotoForUser(userId, 'bad', String(fileId))).rejects.toBeInstanceOf(NotFoundException);
+      await expect(svc.getPhotoForUser(userId, String(new Types.ObjectId()), 'bad')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      model.findOne.mockReturnValue(chain(storedActivity()));
+      await expect(svc.getPhotoForUser(userId, String(new Types.ObjectId()), String(fileId))).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('decide / findWaiting', () => {
+    const decided = (over: Record<string, unknown> = {}) =>
+      storedActivity({ status: 'accepted', userId: new Types.ObjectId(), ...over });
+    it('decides from submitted, then from pending_technical_processing, with the reason code in history (FR-028)', async () => {
+      const { model, svc, publish } = setup();
+      model.findOneAndUpdate.mockReturnValueOnce(chain(null)).mockReturnValueOnce(chain(decided()));
       const id = new Types.ObjectId();
-      await svc.decide(id, 'accepted', 'ok');
+      const r = await svc.decide(id, 'accepted', null);
+      expect(r).not.toBeNull();
       expect(model.findOneAndUpdate.mock.calls[0][0]).toEqual({ _id: id, status: 'submitted' });
+      expect(model.findOneAndUpdate.mock.calls[1][0]).toEqual({ _id: id, status: 'pending_technical_processing' });
+      expect(model.findOneAndUpdate.mock.calls[1][1].$push.statusHistory).toMatchObject({
+        from: 'pending_technical_processing',
+        to: 'accepted',
+        reasonCode: null,
+      });
+      expect(publish.mock.calls.map((c) => c[0])).toEqual(['ActivityDecided', 'ActivityAccepted']);
+      expect(publish.mock.calls[1][1]).toMatchObject({ activityTypeCode: 'tree', category: 'planting' });
+    });
+    it('decide changes only status fields, never the submitted details (FR-015, AC 5)', async () => {
+      const { model, svc } = setup();
+      model.findOneAndUpdate.mockReturnValueOnce(chain(decided()));
+      await svc.decide(new Types.ObjectId(), 'rejected', 'verification.evidenceUnrelated');
+      const update = model.findOneAndUpdate.mock.calls[0][1];
+      expect(Object.keys(update).sort()).toEqual(['$push', '$set']);
+      expect(Object.keys(update.$set).sort()).toEqual(['resultReasonCode', 'status']);
+      expect(Object.keys(update.$push)).toEqual(['statusHistory']);
+    });
+    it('returns null and publishes nothing when another worker already decided (FR-015, FR-028)', async () => {
+      const { model, svc, publish } = setup();
+      model.findOneAndUpdate.mockReturnValue(chain(null));
+      expect(await svc.decide(new Types.ObjectId(), 'rejected', 'verification.evidenceUnrelated')).toBeNull();
+      expect(publish).not.toHaveBeenCalled();
+    });
+    it('publishes ActivityDecided but not ActivityAccepted for a non-accepted outcome (FR-046)', async () => {
+      const { model, svc, publish } = setup();
+      model.findOneAndUpdate.mockReturnValue(chain(decided({ status: 'rejected' })));
+      await svc.decide(new Types.ObjectId(), 'rejected', 'verification.evidenceUnrelated');
+      expect(publish.mock.calls.map((c) => c[0])).toEqual(['ActivityDecided']);
+      expect(publish.mock.calls[0][1]).toMatchObject({
+        status: 'rejected',
+        reasonCode: 'verification.evidenceUnrelated',
+      });
+    });
+    it('skips ActivityAccepted, logging only the id, when the type is gone', async () => {
+      const { model, svc, publish, types } = setup();
+      types.findById.mockRejectedValue(new Error('gone'));
+      model.findOneAndUpdate.mockReturnValue(chain(decided()));
+      await svc.decide(new Types.ObjectId(), 'accepted', null);
+      expect(publish.mock.calls.map((c) => c[0])).toEqual(['ActivityDecided']);
+    });
+    it('markPending moves submitted once, then only updates the reason code (FR-028)', async () => {
+      const { model, svc } = setup();
+      const id = new Types.ObjectId();
+      model.findOneAndUpdate.mockReturnValueOnce(chain(decided({ status: 'pending_technical_processing' })));
+      expect(await svc.markPending(id, 'processing.retrying')).not.toBeNull();
+      expect(model.findOneAndUpdate).toHaveBeenCalledTimes(1);
+      expect(model.findOneAndUpdate.mock.calls[0][0]).toEqual({ _id: id, status: 'submitted' });
+      model.findOneAndUpdate.mockReset();
+      model.findOneAndUpdate.mockReturnValueOnce(chain(null)).mockReturnValueOnce(chain(null));
+      expect(await svc.markPending(id, 'processing.failedPermanently')).toBeNull();
+      expect(model.findOneAndUpdate.mock.calls[1][0]).toEqual({
+        _id: id,
+        status: 'pending_technical_processing',
+        resultReasonCode: { $ne: 'processing.failedPermanently' },
+      });
+    });
+    it('getForVerification returns what the worker needs, with the emirate and no coordinates', async () => {
+      const { model, svc } = setup();
+      expect(await svc.getForVerification('nope')).toBeNull();
+      model.findOne.mockReturnValueOnce(chain(null));
+      expect(await svc.getForVerification(String(new Types.ObjectId()))).toBeNull();
+      model.findOne.mockReturnValueOnce(chain(storedActivity({ userId: new Types.ObjectId() })));
+      const r = await svc.getForVerification(String(new Types.ObjectId()));
+      expect(r).toMatchObject({ emirate: 'Dubai', status: 'submitted', amount: { value: 2, unit: 'trees' } });
+      expect(JSON.stringify(r)).not.toContain('Marina');
+      model.findOne.mockReturnValueOnce(
+        chain(
+          storedActivity({
+            userId: new Types.ObjectId(),
+            locationEnc: { v: 1, iv: 'x', tag: 'x', ct: 'x' },
+            answers: undefined,
+          }),
+        ),
+      );
+      expect((await svc.getForVerification(String(new Types.ObjectId())))?.emirate).toBe('');
     });
     it('finds waiting activities oldest first', async () => {
       const { model, svc } = setup();

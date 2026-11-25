@@ -1,6 +1,8 @@
 import { Controller, Get, Param } from '@nestjs/common';
+import { Public } from '../../common/identity/participant.js';
 import { ActivityTypesService } from './activity-types.service.js';
 
+@Public() // the catalogue is readable without a participant (FR-009)
 @Controller('activity-types')
 export class ActivityTypesController {
   constructor(private readonly types: ActivityTypesService) {}

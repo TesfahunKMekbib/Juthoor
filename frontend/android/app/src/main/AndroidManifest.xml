@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Camera and gallery go through image_picker (system camera app / photo picker). -->
     <application
         android:label="juthoor"
         android:name="${applicationName}"
