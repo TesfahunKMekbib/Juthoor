@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { AgentOptions } from 'node:https';
+import { isIP } from 'node:net';
 import type { ConnectionOptions } from 'node:tls';
 
 /**
@@ -8,9 +9,15 @@ import type { ConnectionOptions } from 'node:tls';
  * Error messages carry variable names and codes only, never paths or file contents.
  */
 export const TLS_MIN_VERSION = 'TLSv1.2' as const;
-export const TLS_ENV = { ca: 'TLS_CA_FILE', cert: 'TLS_CERT_FILE', key: 'TLS_KEY_FILE' } as const;
+export const TLS_ENV = {
+  ca: 'TLS_CA_FILE',
+  cert: 'TLS_CERT_FILE',
+  key: 'TLS_KEY_FILE',
+  required: 'TLS_REQUIRED',
+} as const;
+const FILE_VARS = [TLS_ENV.ca, TLS_ENV.cert, TLS_ENV.key] as const;
 
-export type TlsErrorCode = 'tls.partialConfig' | 'tls.fileUnreadable' | 'tls.fileInvalid' | 'tls.requiredInProduction';
+export type TlsErrorCode = 'tls.partialConfig' | 'tls.fileUnreadable' | 'tls.fileInvalid' | 'tls.requiredInProduction' | 'tls.invalidRequiredFlag';
 
 export class TlsConfigError extends Error {
   constructor(
@@ -47,8 +54,10 @@ function load(env: Env, name: string, read: FileReader): Buffer {
   let data: Buffer;
   try {
     data = read(path);
-  } catch {
-    throw new TlsConfigError('tls.fileUnreadable', `${name} points to a file that cannot be read.`);
+  } catch (e) {
+    const errno = (e as { code?: unknown } | null)?.code;
+    const detail = typeof errno === 'string' && /^[A-Z0-9_]+$/.test(errno) ? ` (${errno})` : '';
+    throw new TlsConfigError('tls.fileUnreadable', `${name} points to a file that cannot be read${detail}.`);
   }
   if (data.length === 0) throw new TlsConfigError('tls.fileInvalid', `${name} points to an empty file.`);
   return data;
@@ -56,7 +65,7 @@ function load(env: Env, name: string, read: FileReader): Buffer {
 
 /** Returns null when no TLS_* variable is set; throws on partial or unreadable configuration. */
 export function loadTlsMaterial(env: Env, read: FileReader = defaultReader): HttpsServerOptions | null {
-  const names = Object.values(TLS_ENV);
+  const names = FILE_VARS;
   const missing = names.filter((n) => !(env[n] ?? '').trim());
   if (missing.length === names.length) return null;
   if (missing.length > 0) {
@@ -83,7 +92,7 @@ export function clientAgentOptions(m: Pick<TlsMaterial, 'ca'>): AgentOptions {
 
 /** `tls.connect` options (non-HTTP clients). */
 export function clientTlsConnectOptions(m: Pick<TlsMaterial, 'ca'>, host: string, port: number): ConnectionOptions {
-  return { host, port, servername: host, ca: m.ca, minVersion: TLS_MIN_VERSION, rejectUnauthorized: true };
+  return { host, port, ...(isIP(host) === 0 ? { servername: host } : {}), ca: m.ca, minVersion: TLS_MIN_VERSION, rejectUnauthorized: true };
 }
 
 /**
@@ -95,12 +104,17 @@ export function resolveServerTls(
   read: FileReader = defaultReader,
   warn: (msg: string) => void = () => undefined,
 ): ServerTls {
+  const flag = (env[TLS_ENV.required] ?? '').trim().toLowerCase();
+  if (flag !== '' && flag !== 'true' && flag !== 'false') {
+    throw new TlsConfigError('tls.invalidRequiredFlag', `${TLS_ENV.required} must be "true" or "false".`);
+  }
   const m = loadTlsMaterial(env, read);
   if (m) return { mode: 'https', options: httpsServerOptions(m) };
-  if (env['NODE_ENV'] === 'production') {
+  const production = (env['NODE_ENV'] ?? '').trim().toLowerCase() === 'production';
+  if (production || flag === 'true') {
     throw new TlsConfigError(
       'tls.requiredInProduction',
-      `Set ${Object.values(TLS_ENV).join(', ')}; plaintext is not allowed in production.`,
+      `Set ${FILE_VARS.join(', ')}; plaintext is not allowed in production or when ${TLS_ENV.required}=true.`,
     );
   }
   warn('TLS not configured; serving plain HTTP (non-production only).');

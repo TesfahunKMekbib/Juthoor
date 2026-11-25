@@ -109,4 +109,55 @@ describe('TLS config (NFR-005)', () => {
       minVersion: 'TLSv1.2',
     });
   });
+
+  it('NODE_ENV is normalised: Production and " production " refuse without TLS', () => {
+    for (const v of ['Production', ' production ', 'PRODUCTION']) {
+      expect(caught(() => resolveServerTls({ NODE_ENV: v }, reader)).code).toBe('tls.requiredInProduction');
+    }
+  });
+
+  it('unset NODE_ENV without TLS stays plain', () => {
+    expect(resolveServerTls({}, reader).mode).toBe('plain');
+  });
+
+  it('TLS_REQUIRED=true without TLS refuses, even in development', () => {
+    const e = caught(() => resolveServerTls({ NODE_ENV: 'development', TLS_REQUIRED: 'true' }, reader));
+    expect(e.code).toBe('tls.requiredInProduction');
+    expect(caught(() => resolveServerTls({ TLS_REQUIRED: ' TRUE ' }, reader)).code).toBe('tls.requiredInProduction');
+  });
+
+  it('TLS_REQUIRED=true with partial config refuses', () => {
+    expect(caught(() => resolveServerTls({ TLS_REQUIRED: 'true', TLS_CA_FILE: '/c/ca.pem' }, reader)).code).toBe(
+      'tls.partialConfig',
+    );
+  });
+
+  it('TLS_REQUIRED=true with full config serves https; false allows plain', () => {
+    expect(resolveServerTls({ TLS_REQUIRED: 'true', ...full }, reader).mode).toBe('https');
+    expect(resolveServerTls({ TLS_REQUIRED: 'false' }, reader).mode).toBe('plain');
+    expect(resolveServerTls({ TLS_REQUIRED: '' }, reader).mode).toBe('plain');
+  });
+
+  it('invalid TLS_REQUIRED value raises tls.invalidRequiredFlag', () => {
+    const e = caught(() => resolveServerTls({ TLS_REQUIRED: 'yes' }, reader));
+    expect(e.code).toBe('tls.invalidRequiredFlag');
+    expect(e.message).toContain('TLS_REQUIRED');
+  });
+
+  it('connect options set servername only for DNS hosts, not IPs', () => {
+    const m = { ca: Buffer.from('x') };
+    expect(clientTlsConnectOptions(m, '10.0.0.5', 3001).servername).toBeUndefined();
+    expect(clientTlsConnectOptions(m, '::1', 3001).servername).toBeUndefined();
+    expect(clientTlsConnectOptions(m, 'activity-service', 3001).servername).toBe('activity-service');
+  });
+
+  it('unreadable file message keeps the errno code but not the path', () => {
+    const enoent: FileReader = () => {
+      throw Object.assign(new Error('ENOENT: /secret/path/key.pem'), { code: 'ENOENT' });
+    };
+    const e = caught(() => loadTlsMaterial(full, enoent));
+    expect(e.code).toBe('tls.fileUnreadable');
+    expect(e.message).toContain('ENOENT');
+    expect(e.message).not.toContain('/secret/path');
+  });
 });
