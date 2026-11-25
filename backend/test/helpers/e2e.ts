@@ -36,7 +36,7 @@ export function setEnv(vars: Record<string, string | undefined>): () => void {
 
 export async function boot(env: Record<string, string | undefined>, abortOnError = true): Promise<INestApplication> {
   const { AppModule } = await import('../../src/app.module.js');
-  const { ApiExceptionFilter } = await import('../../src/common/errors/http-exception.filter.js');
+  const { ApiExceptionFilter } = await import('../../libs/common/errors/http-exception.filter.js');
   const a = await NestFactory.create(await AppModule.forRoot(env), { logger: false, abortOnError });
   a.setGlobalPrefix('api');
   a.useGlobalFilters(new ApiExceptionFilter());

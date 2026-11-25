@@ -1,11 +1,11 @@
-import type { ImagePreparer } from '../../integration/ai/image-prep.js';
-import { MockMultimodalModel, type ScriptEntry } from '../../integration/ai/mock-multimodal-model.js';
+import type { ImagePreparer } from '../../../../libs/integration/ai/image-prep.js';
+import { MockMultimodalModel, type ScriptEntry } from '../../../../libs/integration/ai/mock-multimodal-model.js';
 import {
   ModelError,
   type GenerateRequest,
   type GenerateResult,
   type MultimodalModel,
-} from '../../integration/ai/multimodal-model.js';
+} from '../../../../libs/integration/ai/multimodal-model.js';
 import { decideOutcome } from '../decide-outcome.js';
 import type { ClaimFindings, EvidenceFindings, FollowupFindings } from './findings.js';
 import type { AgentInput } from './prompts/index.js';

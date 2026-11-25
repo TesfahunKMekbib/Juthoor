@@ -20,7 +20,7 @@ module.exports = {
   moduleNameMapper: { '^(\\.{1,2}/.*)\\.js$': '$1' },
   collectCoverageFrom: [
     'src/modules/**/*.ts',
-    'src/common/**/*.ts',
+    'libs/**/*.ts',
     '!**/*.spec.ts',
     '!**/*.module.ts',
     '!**/*.schema.ts',

@@ -81,7 +81,7 @@ class ControlModel {
       imageCount: request.parts.filter((p) => p.type === 'image').length,
     });
     if (this.mode === 'down') {
-      const { ModelError } = await import('../src/modules/integration/ai/multimodal-model.js');
+      const { ModelError } = await import('../libs/integration/ai/multimodal-model.js');
       throw new ModelError('unavailable');
     }
     const forced = this.override?.(request.requestTag);
@@ -115,12 +115,12 @@ interface Harness {
 async function bootHarness(): Promise<Harness> {
   const app = await boot(appEnv());
   const conn = app.get<Connection>(getConnectionToken());
-  const { MULTIMODAL_MODEL } = await import('../src/modules/integration/ai/multimodal-model.js');
-  const { MockMultimodalModel } = await import('../src/modules/integration/ai/mock-multimodal-model.js');
+  const { MULTIMODAL_MODEL } = await import('../libs/integration/ai/multimodal-model.js');
+  const { MockMultimodalModel } = await import('../libs/integration/ai/mock-multimodal-model.js');
   const model = new ControlModel((mode, score) => new MockMultimodalModel({ mode, score }) as unknown as Model);
   // TimeoutMultimodalModel.inner is TypeScript-private only; swapping it keeps the real timeout decorator.
   (app.get(MULTIMODAL_MODEL) as unknown as { inner: unknown }).inner = model;
-  const { EventsService } = await import('../src/common/events/events.service.js');
+  const { EventsService } = await import('../libs/common/events/events.service.js');
   const events = app.get(EventsService);
   const accepted: string[] = [];
   const decided: { activityId: string; status: string }[] = [];

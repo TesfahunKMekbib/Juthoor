@@ -1,10 +1,10 @@
-import type { ImagePreparer } from '../../integration/ai/image-prep.js';
+import type { ImagePreparer } from '../../../../libs/integration/ai/image-prep.js';
 import {
   ModelError,
   type AgentStep,
   type MultimodalModel,
   type RequestTag,
-} from '../../integration/ai/multimodal-model.js';
+} from '../../../../libs/integration/ai/multimodal-model.js';
 import { AGGREGATION_VERSION, aggregate, followupTrigger } from './aggregate.js';
 import { recordCall, requestCall, startBudget, type BudgetConfig, type BudgetState, type CallKind } from './budget.js';
 import {

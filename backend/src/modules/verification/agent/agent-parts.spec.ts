@@ -22,7 +22,7 @@ import {
   type AgentInput,
 } from './prompts/index.js';
 import { validateAgainstSchema } from './schema-validator.js';
-import { MockMultimodalModel } from '../../integration/ai/mock-multimodal-model.js';
+import { MockMultimodalModel } from '../../../../libs/integration/ai/mock-multimodal-model.js';
 import { decideOutcome } from '../decide-outcome.js';
 
 const T = { accept: 0.7, reject: 0.3 };

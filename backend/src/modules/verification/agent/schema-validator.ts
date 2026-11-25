@@ -1,4 +1,4 @@
-import type { ResponseSchema } from '../../integration/ai/multimodal-model.js';
+import type { ResponseSchema } from '../../../../libs/integration/ai/multimodal-model.js';
 
 export type ValidationResult = { ok: true; value: unknown } | { ok: false; errors: string[] };
 

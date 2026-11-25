@@ -1,5 +1,5 @@
 import { ModelError, type GenerateRequest } from '../multimodal-model.js';
-import { claimSchema } from '../../../verification/agent/findings.js';
+import { claimSchema } from '../../../../src/modules/verification/agent/findings.js';
 import { GeminiMultimodalModel, type FetchLike } from './gemini-multimodal-model.js';
 import { toGeminiSchema } from './gemini-schema.js';
 

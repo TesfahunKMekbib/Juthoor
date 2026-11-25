@@ -44,7 +44,7 @@ let jpegWithGps: Buffer;
 
 async function boot(env: Record<string, string | undefined>): Promise<INestApplication> {
   const { AppModule } = await import('../src/app.module.js');
-  const { ApiExceptionFilter } = await import('../src/common/errors/http-exception.filter.js');
+  const { ApiExceptionFilter } = await import('../libs/common/errors/http-exception.filter.js');
   const a = await NestFactory.create(await AppModule.forRoot(env), { logger: false });
   a.setGlobalPrefix('api');
   a.useGlobalFilters(new ApiExceptionFilter());
@@ -386,14 +386,14 @@ describe('dev participant guarantees (AC 23)', () => {
 
   // main.ts calls exactly these guards before NestFactory.create; calling them avoids needing a build.
   it('refuses to boot with the flag outside development (ADR-0010)', async () => {
-    const { assertDevParticipantAllowed } = await import('../src/common/config/dev-participant-mode.js');
+    const { assertDevParticipantAllowed } = await import('../libs/common/config/dev-participant-mode.js');
     expect(() => assertDevParticipantAllowed({ NODE_ENV: 'production', JUTHOOR_DEV_PARTICIPANT: 'true' })).toThrow();
     expect(() => assertDevParticipantAllowed({ NODE_ENV: 'test', JUTHOOR_DEV_PARTICIPANT: 'true' })).toThrow();
     expect(() => assertDevParticipantAllowed({ NODE_ENV: 'production' })).not.toThrow();
   });
 
   it('refuses a real AI provider in production (ADR-0012, NFR-009)', async () => {
-    const { assertAiProviderAllowed } = await import('../src/modules/integration/ai/ai-config.js');
+    const { assertAiProviderAllowed } = await import('../libs/integration/ai/ai-config.js');
     expect(() => assertAiProviderAllowed({ NODE_ENV: 'production', AI_PROVIDER: 'gemini' })).toThrow();
     expect(() => assertAiProviderAllowed({ NODE_ENV: 'production', AI_PROVIDER: 'mock' })).not.toThrow();
   });

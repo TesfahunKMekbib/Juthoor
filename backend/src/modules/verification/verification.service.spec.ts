@@ -1,13 +1,17 @@
 import { jest } from '@jest/globals';
 import { Types } from 'mongoose';
-import { createLocationCipher } from '../../common/config/app-config.js';
-import { EventsService } from '../../common/events/events.service.js';
+import { createLocationCipher } from '../../../libs/common/config/app-config.js';
+import { EventsService } from '../../../libs/common/events/events.service.js';
 import { ActivitiesService } from '../activity/activities.service.js';
 import type { AuditEntryInput } from '../audit/audit.service.js';
-import type { ImagePreparer } from '../integration/ai/image-prep.js';
-import { MockMultimodalModel } from '../integration/ai/mock-multimodal-model.js';
-import { ModelError, type GenerateRequest, type MultimodalModel } from '../integration/ai/multimodal-model.js';
-import { InMemoryPhotoStorage } from '../integration/storage/in-memory-photo-storage.js';
+import type { ImagePreparer } from '../../../libs/integration/ai/image-prep.js';
+import { MockMultimodalModel } from '../../../libs/integration/ai/mock-multimodal-model.js';
+import {
+  ModelError,
+  type GenerateRequest,
+  type MultimodalModel,
+} from '../../../libs/integration/ai/multimodal-model.js';
+import { InMemoryPhotoStorage } from '../../../libs/integration/storage/in-memory-photo-storage.js';
 import { AgentTechnicalError, VerificationAgent, type AgentAssessment } from './agent/verification-agent.js';
 import { buildAgentInput } from './agent-input.js';
 import type { JobOutcome, JobRecord, JobStore } from './job-store.js';

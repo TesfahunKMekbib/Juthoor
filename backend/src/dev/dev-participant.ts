@@ -1,4 +1,4 @@
-import type { ParticipantContext, ParticipantResolver } from '../common/identity/participant.js';
+import type { ParticipantContext, ParticipantResolver } from '../../libs/common/identity/participant.js';
 
 /** Fixed participant used when the dev participant is enabled (ADR-0010 §2). No user document exists. */
 export const DEV_PARTICIPANT_ID = '000000000000000000000d01';
