@@ -1,0 +1,37 @@
+name: PR checks
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  conventions:
+    name: Title and traceability
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check PR title and FR reference
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const title = pr.title || '';
+            const body = pr.body || '';
+            const titleOk = /^(feat|fix|test|docs|refactor|chore|ci|style|perf)(\([a-z0-9-]+\))?!?: .{3,}/.test(title);
+            const traceOk = /\b(N?FR-\d{3})\b/.test(title + '\n' + body) || /\bno-FR\b/i.test(body);
+            const rows = [
+              ['Title follows Conventional Commits (`type(scope): summary`)', titleOk],
+              ['References an FR/NFR ID, or states `no-FR`', traceOk],
+            ];
+            await core.summary
+              .addHeading('PR conventions')
+              .addTable([[{data: 'Check', header: true}, {data: 'Result', header: true}],
+                ...rows.map(([n, ok]) => [n, ok ? '✅ pass' : '❌ fail'])])
+              .addRaw('See .claude/rules/git.md and .github/pull_request_template.md')
+              .write();
+            const failed = rows.filter(([, ok]) => !ok).map(([n]) => n);
+            if (failed.length) core.setFailed(`PR convention checks failed: ${failed.join('; ')}`);

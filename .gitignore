@@ -1,6 +1,6 @@
 # Miscellaneous
 *.class
-*.lock
+# NOTE: lock files (pubspec.lock, package-lock.json) are committed on purpose for reproducible CI.
 *.log
 *.pyc
 *.swp
@@ -277,3 +277,8 @@ vite.config.ts.timestamp-*
 # ---- Juthoor / Claude Code (personal, never commit) ----
 .claude/settings.local.json
 CLAUDE.local.md
+**/.idea/workspace.xml
+coverage/
+# Legacy Flutter artifacts from before the project moved to frontend/ (safe to delete)
+/android/
+/.dart_tool/

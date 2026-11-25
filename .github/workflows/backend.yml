@@ -1,0 +1,77 @@
+name: Backend CI
+
+on:
+  pull_request:
+    paths: ['backend/**', '.nvmrc', '.github/workflows/backend.yml']
+  push:
+    branches: [main, feature]
+    paths: ['backend/**', '.nvmrc', '.github/workflows/backend.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: TypeScript · ESLint · Jest
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      # Available for integration tests (backend/test/*.e2e-spec.ts) via MONGODB_URI.
+      mongo:
+        image: mongo:8
+        ports: ['27017:27017']
+    env:
+      MONGODB_URI: mongodb://localhost:27017/juthoor_test
+      # Baseline debt (docs/open-questions.md Q-D1): typecheck + lint report but do not block
+      # until the repository variable STRICT_CHECKS is set to "true".
+      STRICT: ${{ vars.STRICT_CHECKS == 'true' }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck (tsc)
+        id: typecheck
+        continue-on-error: ${{ vars.STRICT_CHECKS != 'true' }}
+        run: npm run typecheck
+
+      - name: Lint (ESLint)
+        id: lint
+        continue-on-error: ${{ vars.STRICT_CHECKS != 'true' }}
+        run: npm run lint
+
+      - name: Test (Jest, coverage threshold NFR-024)
+        id: test
+        run: npm run test:cov
+
+      - name: Report
+        if: always()
+        run: |
+          icon() { case "$1" in success) echo "✅ pass";; failure) if [ "$2" = "baseline" ] && [ "$STRICT" != "true" ]; then echo "⚠️ fail (non-blocking baseline, Q-D1)"; else echo "❌ fail"; fi;; skipped) echo "⏭️ skipped";; *) echo "$1";; esac; }
+          {
+            echo "## Backend checks"
+            echo "| Check | Result |"
+            echo "|---|---|"
+            echo "| TypeScript (tsc) | $(icon '${{ steps.typecheck.outcome }}' baseline) |"
+            echo "| ESLint | $(icon '${{ steps.lint.outcome }}' baseline) |"
+            echo "| Jest + coverage | $(icon '${{ steps.test.outcome }}') |"
+            if [ -f coverage/coverage-summary.json ]; then
+              echo ""
+              echo "Branch coverage: $(node -e "console.log(require('./coverage/coverage-summary.json').total.branches.pct + '%')")"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
