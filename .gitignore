@@ -279,3 +279,6 @@ vite.config.ts.timestamp-*
 CLAUDE.local.md
 **/.idea/workspace.xml
 coverage/
+# Legacy Flutter artifacts from before the project moved to frontend/ (safe to delete)
+/android/
+/.dart_tool/
