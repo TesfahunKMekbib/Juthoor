@@ -1,11 +1,14 @@
-Status: proposed — awaiting owner approval
+Status: approved (2026-11-25, by project owner) — Q-F8 defaults pending (package checks passed 2026-11-25, §12)
 
 # Plan: four-layer microservices migration (Add an Activity scope)
 
-ADR: `docs/adr/0013-microservices-architecture.md` (proposed, supersedes ADR-0004). Source: owner decisions
-2026-11-25 (quoted in ADR-0013) and `docs/proposal/system-design.md` + `architecture-diagram.jpg`.
+ADR: `docs/adr/0013-microservices-architecture.md` (accepted 2026-11-25, supersedes ADR-0004). Source: owner
+decisions 2026-11-25 (quoted in ADR-0013 and §11) and `docs/proposal/system-design.md` + `architecture-diagram.jpg`.
 Functional scope unchanged: FR-009–028, FR-054 as delivered in `docs/features/FR-009-028-054-add-activity/`.
-**Implementation is BLOCKED until OD-1…OD-4 are decided (Q-F1–Q-F4).**
+Sign-in (FR-001 etc.) stays out of scope; existing functionality, AI agent, frontend screens, security controls,
+tests and teammates' contributions are preserved; existing PR approval gates apply to every slice.
+Remaining gates: Q-F8 production rate-limit defaults (§3.1). §12 package checks passed for the four packages;
+any further package needs its own check before the task that adds it (Q-F9 Redis throttler store).
 
 ## 1. Audit — current code vs. the diagram
 | Layer / concern | Diagram | Current (evidence) | Gap |
@@ -88,20 +91,50 @@ per activity; conditional status updates); future crediting consumers must use a
 ## 3. API Gateway (`apps/api-gateway`)
 | Diagram duty | This phase |
 |---|---|
-| Authentication & authorization | Reuses `IdentityModule` + `ParticipantGuard`; dev participant (ADR-0010) resolved here (same NODE_ENV/flag checks and `X-Juthoor-Dev-Participant` marker). Strips inbound `X-Juthoor-*` headers, adds `X-Juthoor-Participant` + HMAC-SHA256 signature over `participantId|requestId|timestamp` (`GATEWAY_SIGNING_KEY`, 60 s skew). Services use a new `GatewayParticipantResolver` (implements existing `ParticipantResolver`) → controllers unchanged. Later the Identity service issues tokens; only the gateway resolver changes |
+| Authentication & authorization | **Sign-in is out of scope this phase** (owner, 2026-11-25): no login, registration or token issuance; no `/api/auth/**` route exists (whitelist → 404). Reuses `IdentityModule` + `ParticipantGuard`; dev participant (ADR-0010) resolved here (same NODE_ENV/flag checks and `X-Juthoor-Dev-Participant` marker); with it disabled every participant route answers 401 `auth.required` as today. Strips inbound `X-Juthoor-*` headers, adds `X-Juthoor-Participant` + HMAC-SHA256 signature over `participantId|requestId|timestamp` (`GATEWAY_SIGNING_KEY`, 60 s skew). Services use a new `GatewayParticipantResolver` (implements existing `ParticipantResolver`) → controllers unchanged; ownership checks (404 for another participant's activity/photo) stay in activity-service unchanged. **Future hook:** the gateway's `PARTICIPANT_RESOLVER` binding is the only seam — a later `TokenParticipantResolver` verifying Identity Service tokens (FR-001) replaces the dev binding; services, signing and contracts do not change |
 | Request routing | Whitelist: `GET /api/activity-types[/:id]` (public), `POST/GET /api/activities`, `GET /api/activities/:id[/photos/:photoId]` → activity-service; anything else 404 `resource.notFound`; `/internal/**` never routed. Streaming proxy (multipart not buffered) |
 | Request validation | Coarse only: method/path whitelist, `Content-Length` cap from `UPLOAD_MAX_FILES × UPLOAD_MAX_FILE_MB` → 413 `upload.tooLarge`, `Idempotency-Key` presence/length on POST (service keeps its own check). Domain validation (FR-018–021) stays in activity-service |
-| Rate limiting & monitoring | `@nestjs/throttler` per participant/IP → 429 `request.rateLimited` (limits = config, Q-F8); `X-Request-Id` generated/propagated; access log of method, route template, status, latency, requestId (no bodies, IDs, coordinates); `GET /api/health` aggregating `/health` of services |
+| Rate limiting & monitoring | `@nestjs/throttler` keyed by participant (IP only for requests without a participant) → 429 `request.rateLimited` + `Retry-After` (values §3.1, Q-F8); `X-Request-Id` generated/propagated; access log of method, route template, status, latency, requestId (no bodies, IDs, coordinates); `GET /api/health` aggregating `/health` of services |
 Contract unchanged: same paths, status codes, bodies, headers (`Cache-Control: private, no-store`), 422
 `{message, code, errors[]}` passed through untouched; gateway errors use the existing `ApiExceptionFilter`.
 Upstream down → 503 `service.unavailable`. *Alternatives:* Kong (rich plugins, declarative; custom Lua/Go
 plugin for ADR-0010 and signing, +DB/ops), Traefik (simple routing/rate limit via labels; auth = forward-auth
 service anyway), nginx (`limit_req`, fast; custom auth via `auth_request` subservice, no JSON error shape).
 All three would still need a Node auth sidecar — the NestJS gateway is the same code with fewer parts.
-New packages: `http-proxy-middleware` (streaming proxy), `@nestjs/throttler` (in-memory store; a shared
-store is needed when the gateway scales out, NFR-027 — later).
+New packages (approved with conditions, §12): `http-proxy-middleware` (streaming proxy; fixed target
+allowlist from config, never request-derived — SSRF; `changeOrigin`; drop/overwrite inbound `X-Forwarded-*`),
+`@nestjs/throttler` (in-memory store is per instance; a shared Redis store is required before running more
+than one gateway instance, NFR-027 — Q-F9).
 
-## 4. Message broker (OWNER DECISION OD-1)
+### 3.1 Rate-limit verification (Q-F8)
+Source check (2026-11-25): no approved FR/NFR states a rate-limit number. The proposal §2 (reference only) says the
+gateway is responsible for "rate limiting"; NFR-033 (OWASP secure coding) supports having limits but fixes no value;
+the "Deploy rate limiting" risk-table entry cited in the brief is **not present** in `docs/proposal/system-design.md`
+(only line 25). The approved requirements give **lower bounds** the limits must not violate:
+| Requirement | Constraint on limits |
+|---|---|
+| NFR-001 | 95 % of non-upload API requests within 3 s with 1,000 concurrent users — a 429 to a legitimate user is a failed request |
+| NFR-035 | ≥ 99 % of valid non-upload requests succeed with 1,000 concurrent users → no global cap; per-key limits above normal workflow rates |
+| NFR-027 | 1,000 concurrent users by adding instances without code change → limits are configuration; no global/per-gateway cap; shared store before scale-out (Q-F9) |
+| NFR-036 | 250 simultaneous submissions, ≥ 99 % acknowledged in 5 s — campaign events share one NAT/Wi-Fi IP → **no per-IP limit on identified requests** |
+| NFR-002 / FR-028 | Status screen polls every 3 s for ≤ 60 s (`activity_status_screen.dart:103-104`) = 20 GET/min per open screen → read limit well above |
+| FR-021 | File-size limits and attachment counts are configured (`UPLOAD_MAX_FILE_MB` 8, `UPLOAD_MAX_FILES` 6, `app-config.ts:62-64`) |
+
+| Limit | Value | Basis | Verdict |
+|---|---|---|---|
+| Gateway body cap `POST /api/activities` | `UPLOAD_MAX_FILES × UPLOAD_MAX_FILE_MB` + 1 MB multipart overhead (49 MB at defaults) → 413 | FR-021 mechanism; values = existing approved config | **Final** (requirement-backed mechanism, configured value) |
+| Global / per-gateway request cap | none | NFR-027, NFR-035, NFR-036 forbid a fixed cap | **Final** |
+| Per IP, identified requests | none | NFR-036 (shared event IP) | **Final** |
+| Per participant, all `/api` routes | 120 req / 60 s | ≥ 6× status polling (NFR-002/FR-028 UI); no requirement fixes it | Engineering default — Q-F8 |
+| Per participant, `POST /api/activities` | 20 / 60 s | Retries reuse `Idempotency-Key` (FR-015); revisit if offline sync (NFR-019, deferred ADR-0009) batches uploads | Engineering default — Q-F8 |
+| Per IP, requests without a participant (public `GET /api/activity-types*`, 401 paths) | 3,000 / 60 s | Must exceed 1,000 users behind one NAT opening the form (NFR-027/035) | Engineering default — Q-F8 |
+Configuration: `RATE_LIMIT_ENABLED` (default `true`), `RATE_LIMIT_PARTICIPANT_PER_MIN`, `RATE_LIMIT_SUBMIT_PER_MIN`,
+`RATE_LIMIT_ANON_IP_PER_MIN`; validated at boot. Under the single dev participant (ADR-0010) every request has one
+key, so NFR-036/NFR-027 load runs set `RATE_LIMIT_ENABLED=false` in `compose.test.yml`; a unit/e2e test with a
+test-only resolver proves 250 distinct participants from one IP are not throttled and the 121st request of one
+participant is (allowed + denied, NFR-025).
+
+## 4. Message broker — decided: Kafka, single node (owner, 2026-11-25, OD-1)
 | Option | Fit | Effort | Ops (compose/CI) |
 |---|---|---|---|
 | **Kafka 4 (KRaft, 1 node)** — recommended | Diagram icon; per-key ordering; replayable log; consumer groups fan out to future Rewards/Impact/Notification | Medium: client lib + topic bootstrap + DLQ | ~1 GB RAM, 20–40 s start in CI; no ZooKeeper |
@@ -109,15 +142,19 @@ store is needed when the gateway scales out, NFR-027 — later).
 | NATS JetStream | Light, simple, persistent streams | Low–medium | Very light; less familiar to the team |
 | Redis Streams | Simple; Redis also useful for throttler store | Low | Light; weaker tooling for DLQ/replay |
 Retries/backoff for AI already live in the job store (FR-028), so the broker only needs at-least-once delivery.
-Client (spike T5): `kafkajs` (pure JS, used by `@nestjs/microservices`; slow maintenance) vs
-`@confluentinc/kafka-javascript` (official, librdkafka native build — check Windows dev machines). We use our
-own `EventBus` port rather than `@nestjs/microservices` to keep commit control and the in-memory test adapter.
+Client (decided by package check, §12): `@confluentinc/kafka-javascript` (official, librdkafka, prebuilt
+binaries for Node 24 win32-x64/linux glibc+musl/darwin, TLS via librdkafka), used through its KafkaJS-like API
+behind our own `EventBus` port in `libs/messaging` (NFR-023). `kafkajs` rejected (no release since 2023);
+`@nestjs/microservices` Kafka transport not used (requires kafkajs; we also need commit control and the
+in-memory test adapter). Install note: its install script must run — CI/Docker use `npm ci` normally, or
+`npm rebuild @confluentinc/kafka-javascript` after `npm ci --ignore-scripts`; a source build (MSVC/Python) is
+never expected.
 
 ## 5. Docker (NFR-038)
 - `backend/apps/<svc>/Dockerfile`: multi-stage `node:24-slim` (glibc for `sharp`), `npm ci` → build → runtime
   with `npm ci --omit=dev`, non-root user, `HEALTHCHECK`, removes `dist/**/dev` (ADR-0010) in production target.
 - `backend/compose.yml`: `api-gateway` (only published port 3000), `activity-service`, `verification-service`,
-  `kafka`, `mongo-activity`, `mongo-verification`, `minio` (+ bucket init); internal network; named volumes;
+  `kafka`, `mongo-activity`, `mongo-verification`, `minio` (+ bucket init), one-shot `certs-init` (§5.1); internal network; named volumes;
   `depends_on: condition: service_healthy`. `backend/compose.test.yml`: `AI_PROVIDER=mock`, tmpfs volumes,
   dev participant on, test keys generated by the runner.
 - Config per service (validated at boot as today): gateway `PORT, ACTIVITY_SERVICE_URL, GATEWAY_SIGNING_KEY,
@@ -125,7 +162,36 @@ own `EventBus` port rather than `@nestjs/microservices` to keep commit control a
   GATEWAY_SIGNING_KEY, INTERNAL_SERVICE_KEY, STORAGE_*, BROKER_*, OUTBOX_POLL_MS`; verification `MONGODB_URI,
   ACTIVITY_SERVICE_URL, INTERNAL_SERVICE_KEY, BROKER_*, AI_*, VERIFY_*`. Secrets only via an untracked `.env`
   and `${VAR:?}` interpolation. `.env.example` per service: agents are blocked from writing `.env*` (Q-E9/Q-F7)
-  — the variable table lives in this plan; the owner creates the files.
+  — the variable table lives in this plan; the owner creates the files. TLS variables for every service:
+  `TLS_CA_FILE, TLS_CERT_FILE, TLS_KEY_FILE` (paths to mounted certs, §5.1); Mongo `MONGODB_URI` carries
+  `tls=true&tlsCAFile=…`; `BROKER_SSL_CA_FILE`; `STORAGE_ENDPOINT=https://minio:9000` + `STORAGE_FORCE_PATH_STYLE=true`.
+
+### 5.1 Internal TLS (owner decision 5, 2026-11-25: *"Enable internal TLS in accordance with NFR-005."*)
+NFR-005: *"The system shall protect personal data transmitted over network connections using TLS 1.2 or later."*
+Internal links carrying personal data: gateway→activity (submission body, photos, emirate), verification→activity
+internal API (description, answers, emirate, photos), services→MongoDB, activity→MinIO (photos), services→Kafka
+(user IDs). All are TLS ≥ 1.2 in compose and in the CI docker job; no plaintext listener is exposed.
+| Link | Server side | Client side |
+|---|---|---|
+| gateway → activity-service; verification → activity `/internal/**` | each service's Nest app starts HTTPS (`httpsOptions` cert/key, `minVersion: 'TLSv1.2'`) | proxy / internal HTTP adapter with `ca` = dev CA, hostname verification on |
+| services → Kafka | KRaft broker: only `SASL_SSL` listener (SCRAM, §7), `ssl.keystore.type=PEM`, `ssl.enabled.protocols=TLSv1.3,TLSv1.2` | librdkafka `security.protocol=sasl_ssl`, `ssl.ca.location` |
+| services → MongoDB | `mongod --tlsMode requireTLS --tlsCertificateKeyFile … --tlsDisabledProtocols TLS1_0,TLS1_1` | `tls=true&tlsCAFile=…` in URI |
+| activity → MinIO | MinIO `--certs-dir` (`public.crt`/`private.key`) | S3 client `https` endpoint, `forcePathStyle: true`, request handler agent with `ca` |
+**Certificates:** `backend/scripts/dev-certs.sh` runs inside the `certs-init` one-shot container (openssl image, so
+Windows hosts need no openssl): creates a throwaway dev CA and one server cert per hostname (SANs = compose service
+names) into a named volume `certs`, mounted read-only into each container; private keys never leave the volume.
+Nothing is committed (`backend/.gitignore` adds `certs/`); `compose down -v` destroys them; CI generates fresh
+ones per run. Production certificates come from the hosting platform (hosting deferred, ADR-0009).
+**Server-auth TLS, not mTLS (recommended):** NFR-005 requires confidentiality in transit, which server-auth TLS
+gives; client identity on each link is already enforced by application credentials (gateway HMAC signature,
+`INTERNAL_SERVICE_KEY`, Kafka SCRAM users + ACLs, per-DB Mongo users, MinIO access key). mTLS would add per-client
+certs, rotation and broker/Mongo client-cert config with no requirement asking for it; it remains a config-only
+upgrade later (same CA, script emits client certs).
+**Boot rule:** with `NODE_ENV=production`, a service whose TLS vars are missing or whose Mongo/broker/storage
+config is plaintext fails at boot (config validation, like ADR-0010's fail-fast). The in-process Jest e2e harness
+(single process, loopback, in-memory bus) stays plaintext; TLS is proven by unit + docker integration tests (§6).
+Out of this decision: the public client→gateway edge (TLS at the hosting edge, ADR-0009 deferral); in local dev
+the gateway publishes HTTP on `localhost:3000` so the Flutter default `API_BASE_URL` keeps working.
 
 ## 6. Testing
 - **Unit (325):** move with their code; Jest `roots`/`collectCoverageFrom` → `apps/**`, `libs/**`; 80 % branch
@@ -138,8 +204,16 @@ own `EventBus` port rather than `@nestjs/microservices` to keep commit control a
   compose.test.yml up --wait` → submit via gateway → mock AI → poll until `accepted`; replay same
   Idempotency-Key → one record; stop verification-service → submit still 201, start → decided (NFR-020);
   restart verification mid-job → exactly one `ActivityAccepted` on the topic; `/internal` not reachable via gateway.
-- **CI (Q-E8, Q-F6):** dedicated `ci:` PR adds `npm run test:e2e` and a `docker-integration` job (compose up,
-  run `npm run test:int`, upload logs, compose down). Hotspot `.github/**`.
+- **TLS (NFR-005):** unit — TLS config loader (missing/invalid files, `minVersion` TLSv1.2), production boot
+  rejects plaintext Mongo URI / broker protocol / `http` storage endpoint / missing cert vars. Integration (all
+  with TLS on, the full flow above must pass): plain HTTP to activity-service:3001 refused; TLS 1.1 handshake
+  refused (`openssl s_client -tls1_1`); client with a foreign CA refused; Mongo without `tls=true` refused; Kafka
+  has no PLAINTEXT listener; MinIO over `http` refused.
+- **Rate limits (§3.1):** unit/e2e — participant over limit → 429 + `Retry-After`, under limit → passes;
+  250 distinct participants from one IP not throttled; anonymous per-IP limit; `RATE_LIMIT_ENABLED=false`.
+- **CI (Q-E8, Q-F6):** dedicated `ci:` PR adds `npm run test:e2e`, `npm audit --audit-level=high --omit=dev`
+  (package-check condition 6) and a `docker-integration` job (compose up incl. `certs-init`, run
+  `npm run test:int`, upload logs — never the certs volume — `compose down -v`). Hotspot `.github/**`.
 
 ## 7. Security (NFR-033)
 Only the gateway is published; services/broker/DBs/storage on an internal network. Gateway-signed identity
@@ -149,7 +223,7 @@ Mongo users with `readWrite` on their DB only; MinIO user for activity-service o
 via internal API). No coordinates anywhere on the wire or in events (FR-020 GPS deferred; `rules-2` accepts
 manual location only); emirate only in the internal subject response (NFR-004, NFR-007). Logs: eventId,
 activityId, codes only. AI stays mock in production (ADR-0012 boot check moves to verification-service).
-TLS inside the network (NFR-005) open: Q-F4.
+TLS ≥ 1.2 on every internal link (NFR-005, decided Q-F4): §5.1.
 
 ## 8. Future services (contracts only; not built)
 | Service | Consumes | Publishes / note |
@@ -160,7 +234,7 @@ TLS inside the network (NFR-005) open: Q-F4.
 | Campaign & Challenge | `activity.accepted.v1` (credited once, FR-046) | `challenge.progressed.v1` |
 | Community & Leaderboard | `rewards.issued.v1`, `impact.recorded.v1` | — (NFR-020: non-critical) |
 | Notification | `activity.decided.v1`, `verification.deferred.v1` (FR-028 notify) | — |
-| Payment | **Not in approved requirements** (only NFR-033 "where applicable"; Q-A3, Q-F5) — no contract | — |
+| Payment | Future service only (owner, 2026-11-25, Q-F5); not in approved requirements (NFR-033 "where applicable"; Q-A3) — no contract | — |
 
 ## 9. Frontend
 No Flutter code change: same paths/shapes; the gateway listens on 3000, so the default `API_BASE_URL`
@@ -170,19 +244,20 @@ localised text for them is optional later (en + ar, NFR-016).
 ## 10. Tasks and PR slices (all on branches from `feature`; < ~400 changed lines except pure renames)
 | ID | Tag | Task | After | Parallel |
 |---|---|---|---|---|
-| T1 | [backend] | Move-only: `src/common`→`libs/common`, `src/modules/integration`→`libs/integration`; fix imports, Jest/tsconfig/ESLint/build paths; transitional `src/main.ts` still runs everything | OD approval | — |
-| T2 | [backend] | Move-only: activity → `apps/activity-service/src`, verification + audit → `apps/verification-service/src`; boundary lint rule (temporary allow-list for the T4 coupling) | T1 | — |
-| T3 | [backend] | `libs/contracts` + `libs/messaging`: envelope, topics, `EventBus` port, in-memory adapter (ex `EventsService`), outbox relay + specs | T1 | with T6, T7 |
+| T1 | [backend] | Move-only: `src/common`→`libs/common`, `src/modules/integration`→`libs/integration`; fix imports, Jest/tsconfig/ESLint/build paths; transitional `src/main.ts` still runs everything | owner approval (done) | — |
+| T2 | [backend] | Move-only: activity → `apps/activity-service/src`, verification + audit → `apps/verification-service/src`; boundary lint rule (temporary allow-list for the T4 coupling) | T1 | with T13 |
+| T13 | [backend] | **TLS (new):** `libs/common/tls` — load CA/cert/key from `TLS_*`, `minVersion: 'TLSv1.2'`, HTTPS server options + client agent factory, production plaintext boot rule + specs (no package) | T1 | with T2, T3 |
+| T3 | [backend] | `libs/contracts` + `libs/messaging`: envelope, topics, `EventBus` port, in-memory adapter (ex `EventsService`), outbox relay + specs | T1 | with T2, T13, T6, T7 |
 | T4a | [backend] | activity-service: embedded outbox on submit/decide, consumers for decided/deferred, internal subject/photo controller + service-key guard | T2, T3 | with T4b |
-| T4b | [backend] | verification-service: ports `SubjectSource`/`PhotoSource` (HTTP adapters), job outbox, drop `findWaiting`, narrow `buildAgentInput` type | T2, T3 | with T4a |
-| T5 | [backend] | Kafka adapter (OD-1), topic bootstrap, DLQ, client spike | T3 | with T4a/b |
-| T6 | [backend] | api-gateway app: routing whitelist, streaming proxy, identity signing + `GatewayParticipantResolver`, throttler, request id, health | T1 | with T3, T7 |
-| T7 | [backend] | S3/MinIO `PhotoStorage` adapter (OD-3) selected by `STORAGE_PROVIDER` | T1 | with T3, T6 |
-| T8 | [backend] | Per-service `main.ts`/root modules/config; remove transitional `src/main.ts`, `app.module.ts`; e2e harness via gateway | T4a, T4b, T5, T6 | — |
-| T9 | [backend] | Dockerfiles, `compose.yml`, `compose.test.yml`, `.dockerignore` | T7, T8 | — |
-| T10 | [qa] | Docker integration suite + `test:int` script | T9 | — |
-| T11 | [ci] | e2e step (Q-E8) + docker-integration job | T10 | — |
-| T12 | [docs] | traceability prefixes, plan/ADR status, architecture.md + CLAUDE.md layout (`chore:` hotspot PR), ADR-0004/0006 supersession notes | T8 | with T9–T11 |
+| T4b | [backend] | verification-service: ports `SubjectSource`/`PhotoSource` (HTTP adapters **over HTTPS with the CA agent**), job outbox, drop `findWaiting`, narrow `buildAgentInput` type | T2, T3, T13 | with T4a |
+| T5 | [backend] | Kafka adapter on `@confluentinc/kafka-javascript` (package check ✔), topic bootstrap, DLQ; **`sasl_ssl` + `ssl.ca.location`** config | T3, T13 | with T4a/b |
+| T6 | [backend] | api-gateway app: routing whitelist, streaming proxy (fixed target allowlist; **HTTPS upstream with CA**), identity signing + `GatewayParticipantResolver`, throttler (§3.1 config), request id, health (package check ✔ ×2) | T1, T13 | with T3, T7 |
+| T7 | [backend] | S3/MinIO `PhotoStorage` adapter selected by `STORAGE_PROVIDER`; `forcePathStyle`, **https endpoint + CA** (package check ✔) | T1, T13 | with T3, T6 |
+| T8 | [backend] | Per-service `main.ts`/root modules/config (**HTTPS listeners + TLS config validation**); remove transitional `src/main.ts`, `app.module.ts`; e2e harness via gateway (plaintext loopback) | T4a, T4b, T5, T6 | — |
+| T9 | [backend] | Dockerfiles (confluent install script runs, condition 2), `compose.yml`, `compose.test.yml`, `.dockerignore`; **`scripts/dev-certs.sh`, `certs-init` service, `certs` volume, TLS flags for Kafka/Mongo/MinIO, `.gitignore certs/`** | T7, T8 | — |
+| T10 | [qa] | Docker integration suite + `test:int` script, **incl. TLS negative tests (§6)** and rate-limit tests | T9 | — |
+| T11 | [ci] | e2e step (Q-E8) + docker-integration job (**fresh certs per run, `down -v`**) + `npm audit --audit-level=high --omit=dev` | T10 | — |
+| T12 | [docs] | traceability prefixes, plan/ADR status, architecture.md + CLAUDE.md layout (`chore:` hotspot PR); ADR-0004/0006 status notes already recorded 2026-11-25 | T8 | with T9–T11 |
 **Reuse map (content unchanged, path only):** `src/common/**`→`libs/common/**`; `src/modules/integration/**`→
 `libs/integration/**`; `src/modules/activity/**`→`apps/activity-service/src/activity/**`;
 `src/modules/verification/**` (agent, decide-outcome, retry-policy, job store, worker) and `src/modules/audit/**`
@@ -191,17 +266,41 @@ localised text for them is optional later (en + ar, NFR-016).
 `verification.service.ts` deps, `verification.module.ts` imports, `activities.service.ts` publish points,
 `agent-input.ts` imports.
 
-## 11. Owner decisions and open questions
-- **OD-1 (Q-F1)** Broker: Kafka KRaft (recommended) or RabbitMQ.
-- **OD-2 (Q-F2)** Gateway: NestJS gateway app (recommended) or Kong/Traefik/nginx.
-- **OD-3 (Q-F3)** Photos: S3-compatible/MinIO adapter (recommended, revisits ADR-0006/Q-A8) or GridFS in activity DB.
-- **OD-4** Audit ownership: verification DB now (recommended) or an Audit service now.
-- **OD-5 (Q-F4)** NFR-005 TLS on the internal network/broker in this phase.
-- **OD-6** Accept ADR-0013, supersede ADR-0004, reopen Q-A9.
-- **OD-7** New packages: broker client, `@aws-sdk/client-s3`, `http-proxy-middleware`, `@nestjs/throttler`.
-- **OD-8 (Q-F8)** Rate-limit values. Also Q-F5 (Payment), Q-F6 (CI docker job), Q-F7 (`.env.example` per service).
+## 11. Owner decisions (2026-11-25) and open questions
+Owner, verbatim: *"1. Approve Kafka, single node. 2. Approve NestJS API Gateway. 3. Approve S3-compatible MinIO
+storage. 4. Approve Verification Service ownership of the audit log. 5. Enable internal TLS in accordance with
+NFR-005. 6. Approve the proposed packages, subject to security and compatibility checks. 7. Verify the proposed
+rate limits against the approved requirements before finalizing them. 8. Keep Payment Service as a future service
+only. 9. Accept ADR-0013 and supersede ADR-0004. Proceed with the migration ... Keep sign-in outside the current
+implementation scope. ... Keep the migration limited to Add an Activity and retain the existing PR approval gates."*
+- OD-1 Kafka 4 KRaft single node — decided (Q-F1). OD-2 NestJS gateway — decided (Q-F2). OD-3 MinIO via
+  `@aws-sdk/client-s3`, ADR-0006 superseded in part — decided (Q-F3). OD-4 audit in verification-service — decided.
+  OD-5 internal TLS — decided (Q-F4), §5.1. OD-6 ADR-0013 accepted, ADR-0004 superseded, Q-A9 decided.
+  OD-7 packages — approved subject to checks; checks passed (§12). Payment — future only (Q-F5).
+- **Still open:** Q-F8 (owner confirms the engineering defaults in §3.1), Q-F9 (Redis throttler store before
+  gateway scale-out), Q-F6 (CI runner budget), Q-F7 (`.env.example` per service).
 
-**Risks:** big-bang moves conflicting with teammates' branches (mitigate: move-only PRs first, announce freeze
+## 12. Package checks (gate: before the first task adding each package)
+security-reviewer, 2026-11-25: throwaway npm install with NestJS 12.6, `--ignore-scripts`, `npm audit` 0 vulnerabilities.
+| Package | Version | License | Advisories | Compatibility | First task | Result |
+|---|---|---|---|---|---|---|
+| `@confluentinc/kafka-javascript` | 1.11.0 | MIT | 0 | Node ≥ 18, typed, KafkaJS-like API, TLS via librdkafka, prebuilt Node 24 win32-x64, linux x64/arm64 (glibc/musl), darwin; ~16 MB | T5 | **Approve with conditions** (chosen Kafka client) |
+| `kafkajs` | 2.2.4 | — | — | no release since 2023, 419 open issues | — | Reject; `@nestjs/microservices` Kafka transport not used (needs kafkajs) |
+| `@aws-sdk/client-s3` | 3.1177.0 | Apache-2.0 | 0 | MinIO with `forcePathStyle: true` + https endpoint | T7 | **Approve** |
+| `http-proxy-middleware` | 4.2.2 | MIT | 0 | ESM-only; Express 5 via `app.use` | T6 | **Approve with conditions** |
+| `@nestjs/throttler` | 6.8.0 | MIT | 0 | peer NestJS ^12; in-memory store per instance | T6 | **Approve with conditions** |
+| `@nest-lab/throttler-storage-redis` | 1.2.0 | — | — | peer ≤ NestJS 11 | — | Reject for now; shared store → Q-F9 (not approved) |
+| Dev CA / TLS | — | — | — | `node:crypto` / openssl image, no package | T13, T9 | n/a |
+Conditions: (1) exact versions pinned in `package-lock.json`; (2) Confluent install script must run (or
+`npm rebuild @confluentinc/kafka-javascript` after `npm ci --ignore-scripts`) — CI and Dockerfiles; (3) Kafka client
+only behind the `libs/messaging` port (NFR-023), not the NestJS transport; (4) proxy: fixed target allowlist (no
+request-derived targets, SSRF), `changeOrigin`, forwarded-header hygiene; (5) shared (Redis) throttler store before
+more than one gateway instance (Q-F9); (6) `npm audit --audit-level=high --omit=dev` in CI (T11).
+Gate: **passed** for the four approved packages. Any other new package (e.g. a Redis client) needs its own check.
+
+## 13. Risks
+Big-bang moves conflicting with teammates' branches (mitigate: move-only PRs first, announce freeze
 window); Kafka memory/CI time; ESM + relative imports across `apps/`/`libs/` (lint-guarded); losing
 exactly-once guarantees during T4 (mitigated by order-insensitive conditional updates + integration test);
-NFR-002 30 s budget now includes relay + broker latency (poll interval ≤ 1 s).
+NFR-002 30 s budget now includes relay + broker latency (poll interval ≤ 1 s); TLS handshakes on internal links
+(mitigated by keep-alive agents and long-lived Kafka/Mongo connections); native Kafka client binary on dev machines.
