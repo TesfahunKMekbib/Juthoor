@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { EventsService } from '../../../../libs/common/events/events.service.js';
+import { EventBus } from '../../../../libs/messaging/index.js';
 import { ActivitiesService } from '../../../activity-service/src/activity/activities.service.js';
 import { ActivityModule } from '../../../activity-service/src/activity/activity.module.js';
 import { ActivityTypesService } from '../../../activity-service/src/activity/activity-types.service.js';
@@ -92,10 +92,10 @@ const VERIFICATION_SERVICE_CONFIG = Symbol('VERIFICATION_SERVICE_CONFIG');
       provide: VerificationWorker,
       useFactory: (
         service: VerificationService,
-        events: EventsService,
+        events: EventBus,
         cfg: ReturnType<typeof parseVerificationConfig> & { worker: ReturnType<typeof parseWorkerConfig> },
       ) => new VerificationWorker(service, events, { enabled: cfg.worker.enabled, pollMs: cfg.pollMs }),
-      inject: [VerificationService, EventsService, VERIFICATION_SERVICE_CONFIG],
+      inject: [VerificationService, EventBus, VERIFICATION_SERVICE_CONFIG],
     },
   ],
   exports: [VerificationService],

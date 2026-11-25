@@ -1,7 +1,7 @@
 import { type DynamicModule, Module, type Type } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { devParticipantMode } from '../libs/common/config/dev-participant-mode.js';
-import { EventsModule } from '../libs/common/events/events.module.js';
+import { MessagingModule } from '../libs/messaging/index.js';
 import { IdentityModule } from '../libs/common/identity/identity.module.js';
 import { ActivityModule } from '../apps/activity-service/src/activity/activity.module.js';
 import { VerificationModule } from '../apps/verification-service/src/verification/verification.module.js';
@@ -23,7 +23,7 @@ export class AppModule {
       imports: [
         MongooseModule.forRoot(env.MONGODB_URI || 'mongodb://localhost:27017/juthoor'),
         IdentityModule.register(resolverModule),
-        EventsModule,
+        MessagingModule,
         ActivityModule,
         VerificationModule,
       ],

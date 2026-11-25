@@ -7,7 +7,8 @@ import {
   type ErrorDetail,
   ValidationFailedException,
 } from '../../../../libs/common/errors/validation-failed.exception.js';
-import { EventsService } from '../../../../libs/common/events/events.service.js';
+import { createEnvelope } from '../../../../libs/contracts/index.js';
+import { EventBus } from '../../../../libs/messaging/index.js';
 import {
   EVIDENCE_SANITIZER,
   EvidenceRejectedError,
@@ -25,6 +26,8 @@ import { ActivityTypesService, type ActivityTypeRecord } from './activity-types.
 import { Activity, ACTIVITY_STATUSES, type ActivityLocation, type ActivityStatus } from './activity.schema.js';
 import { LOCATION_CIPHER } from './activity.tokens.js';
 import { checkSubmission, type SubmissionInput } from './submission-rules.js';
+
+const PRODUCER = 'activity-service' as const;
 
 type ActivityRecord = Activity & {
   _id: Types.ObjectId;
@@ -61,7 +64,7 @@ export class ActivitiesService {
     @InjectModel(Activity.name) private readonly activities: Model<Activity>,
     private readonly types: ActivityTypesService,
     @Inject(PHOTO_STORAGE) private readonly photos: PhotoStorage,
-    private readonly events: EventsService,
+    private readonly events: EventBus,
     @Inject(EVIDENCE_SANITIZER) private readonly sanitizer: EvidenceSanitizer,
     @Inject(LOCATION_CIPHER) private readonly cipher: FieldCipher,
   ) {}
@@ -147,15 +150,15 @@ export class ActivitiesService {
 
     // Published only after the activity is safely stored, outside the photo-cleanup block, so a
     // downstream failure can never leave a saved activity pointing at deleted photos (FR-015, FR-028).
-    this.events.publish('ActivitySubmitted', {
-      activityId: String(record._id),
-      userId,
-      activityTypeCode: type.code,
-      category: type.category,
-      amount: record.amount,
-      emirate,
-      doneAt: record.doneAt,
-    });
+    const submittedId = String(record._id);
+    void this.events.publish(
+      createEnvelope('ActivitySubmitted', submittedId, PRODUCER, {
+        userId,
+        activityTypeCode: type.code,
+        category: type.category,
+        submittedAt: record.submittedAt.toISOString(),
+      }),
+    );
     return { created: true, activity: await this.toView(record, type) };
   }
 
@@ -246,18 +249,21 @@ export class ActivitiesService {
     if (!record) return null;
     const id = String(record._id);
     const userId = String(record.userId);
-    this.events.publish('ActivityDecided', { activityId: id, userId, status: to, reasonCode, decidedAt: now });
+    void this.events.publish(
+      createEnvelope('ActivityDecided', id, PRODUCER, { userId, status: to, reasonCode, decidedAt: now.toISOString() }),
+    );
     if (to === 'accepted') {
       const type = await this.types.findById(String(record.activityTypeId)).catch(() => undefined);
       if (type) {
-        this.events.publish('ActivityAccepted', {
-          activityId: id,
-          userId,
-          activityTypeCode: type.code,
-          category: type.category,
-          amount: { value: record.amount.value, unit: record.amount.unit },
-          doneAt: record.doneAt,
-        });
+        void this.events.publish(
+          createEnvelope('ActivityAccepted', id, PRODUCER, {
+            userId,
+            activityTypeCode: type.code,
+            category: type.category,
+            amount: { value: record.amount.value, unit: record.amount.unit },
+            doneAt: record.doneAt.toISOString(),
+          }),
+        );
       } else {
         this.logger.error(`ActivityAccepted not published: type missing (activityId=${id})`);
       }

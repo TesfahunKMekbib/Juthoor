@@ -120,12 +120,12 @@ async function bootHarness(): Promise<Harness> {
   const model = new ControlModel((mode, score) => new MockMultimodalModel({ mode, score }) as unknown as Model);
   // TimeoutMultimodalModel.inner is TypeScript-private only; swapping it keeps the real timeout decorator.
   (app.get(MULTIMODAL_MODEL) as unknown as { inner: unknown }).inner = model;
-  const { EventsService } = await import('../libs/common/events/events.service.js');
-  const events = app.get(EventsService);
+  const { EventBus } = await import('../libs/messaging/index.js');
+  const events = app.get(EventBus);
   const accepted: string[] = [];
   const decided: { activityId: string; status: string }[] = [];
   events.subscribe('ActivityAccepted', (e) => accepted.push(e.activityId));
-  events.subscribe('ActivityDecided', (e) => decided.push({ activityId: e.activityId, status: e.status }));
+  events.subscribe('ActivityDecided', (e) => decided.push({ activityId: e.activityId, status: e.payload.status }));
   return { app, base: urlOf(app), conn, model, accepted, decided };
 }
 
@@ -407,7 +407,8 @@ describe('phase B: explicit driving, duplicate processing and racing sweeps (FR-
   });
 
   const svc = async (h: Harness) => {
-    const { VerificationService } = await import('../apps/verification-service/src/verification/verification.service.js');
+    const { VerificationService } =
+      await import('../apps/verification-service/src/verification/verification.service.js');
     return h.app.get(VerificationService);
   };
   const totalCalls = () => h1.model.calls.length + h2.model.calls.length;

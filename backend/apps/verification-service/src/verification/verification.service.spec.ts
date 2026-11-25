@@ -1,7 +1,8 @@
 import { jest } from '@jest/globals';
 import { Types } from 'mongoose';
 import { createLocationCipher } from '../../../../libs/common/config/app-config.js';
-import { EventsService } from '../../../../libs/common/events/events.service.js';
+import { InMemoryEventBus } from '../../../../libs/messaging/index.js';
+import { createEnvelope } from '../../../../libs/contracts/index.js';
 import { ActivitiesService } from '../../../activity-service/src/activity/activities.service.js';
 import type { AuditEntryInput } from '../audit/audit.service.js';
 import type { ImagePreparer } from '../../../../libs/integration/ai/image-prep.js';
@@ -157,12 +158,12 @@ function setup(opts: { agent?: { assess: (i: unknown) => Promise<AgentAssessment
   const clock = { t: T0.getTime() };
   const now = () => new Date(clock.t);
   const model = new SwitchModel(opts.model ?? new MockMultimodalModel({ mode: 'fixed', score: 0.95 }));
-  const events = new EventsService();
+  const events = new InMemoryEventBus();
   const published: { name: string; payload: unknown }[] = [];
   const realPublish = events.publish.bind(events);
-  jest.spyOn(events, 'publish').mockImplementation((name, payload) => {
-    published.push({ name, payload });
-    realPublish(name, payload);
+  jest.spyOn(events, 'publish').mockImplementation((envelope) => {
+    published.push({ name: envelope.type, payload: envelope });
+    return realPublish(envelope);
   });
   const photos = new InMemoryPhotoStorage();
   const activityModel = new FakeActivityModel();
@@ -258,7 +259,10 @@ describe('VerificationService', () => {
       modelVersion: 'mock-1',
     });
     expect(s.published.map((p) => p.name)).toEqual(['ActivityDecided', 'ActivityAccepted']);
-    expect(s.published[1]!.payload).toMatchObject({ activityId: id, activityTypeCode: 'TREE', amount: { value: 2 } });
+    expect(s.published[1]!.payload).toMatchObject({
+      activityId: id,
+      payload: { activityTypeCode: 'TREE', amount: { value: 2 } },
+    });
   });
 
   it('returns for correction below the accept threshold and rejects below the reject threshold (FR-026, FR-027)', async () => {
@@ -546,7 +550,7 @@ describe('buildAgentInput', () => {
 describe('VerificationWorker', () => {
   const mk = (enabled: boolean) => {
     const service = { onSubmitted: jest.fn(() => Promise.resolve()), sweep: jest.fn(() => Promise.resolve(0)) };
-    const events = new EventsService();
+    const events = new InMemoryEventBus();
     const worker = new VerificationWorker(service as never, events, { enabled, pollMs: 1000 });
     return { service, events, worker };
   };
@@ -556,7 +560,14 @@ describe('VerificationWorker', () => {
     const { service, events, worker } = mk(false);
     worker.onModuleInit();
     jest.advanceTimersByTime(5000);
-    events.publish('ActivitySubmitted', {} as never);
+    void events.publish(
+      createEnvelope('ActivitySubmitted', 'a0', 'activity-service', {
+        userId: 'u',
+        activityTypeCode: 'T',
+        category: 'c',
+        submittedAt: '2026-01-01T00:00:00.000Z',
+      }),
+    );
     expect(service.sweep).not.toHaveBeenCalled();
     expect(service.onSubmitted).not.toHaveBeenCalled();
     jest.useRealTimers();
@@ -569,12 +580,26 @@ describe('VerificationWorker', () => {
     worker.start(); // second start is a no-op
     jest.advanceTimersByTime(2000);
     expect(service.sweep).toHaveBeenCalledTimes(2);
-    events.publish('ActivitySubmitted', { activityId: 'a1' } as never);
+    void events.publish(
+      createEnvelope('ActivitySubmitted', 'a1', 'activity-service', {
+        userId: 'u',
+        activityTypeCode: 'T',
+        category: 'c',
+        submittedAt: '2026-01-01T00:00:00.000Z',
+      }),
+    );
     expect(service.onSubmitted).toHaveBeenCalledWith('a1');
     await worker.onModuleDestroy();
     jest.advanceTimersByTime(5000);
     expect(service.sweep).toHaveBeenCalledTimes(2);
-    events.publish('ActivitySubmitted', { activityId: 'a2' } as never);
+    void events.publish(
+      createEnvelope('ActivitySubmitted', 'a2', 'activity-service', {
+        userId: 'u',
+        activityTypeCode: 'T',
+        category: 'c',
+        submittedAt: '2026-01-01T00:00:00.000Z',
+      }),
+    );
     expect(service.onSubmitted).toHaveBeenCalledTimes(1);
     jest.useRealTimers();
   });

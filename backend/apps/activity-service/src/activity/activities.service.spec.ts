@@ -3,7 +3,7 @@ import sharp from 'sharp';
 import { BadRequestException, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { createLocationCipher } from '../../../../libs/common/config/app-config.js';
-import { EventsService } from '../../../../libs/common/events/events.service.js';
+import { InMemoryEventBus } from '../../../../libs/messaging/index.js';
 import { SharpEvidenceSanitizer } from '../../../../libs/integration/image/sharp-evidence-sanitizer.js';
 import { InMemoryPhotoStorage } from '../../../../libs/integration/storage/in-memory-photo-storage.js';
 import { ActivitiesService } from './activities.service.js';
@@ -76,7 +76,7 @@ function setup() {
   };
   const types = { findById: mockFn().mockResolvedValue(type), findByIds: mockFn().mockResolvedValue([type]) };
   const photos = new InMemoryPhotoStorage();
-  const events = new EventsService();
+  const events = new InMemoryEventBus();
   const publish = jest.spyOn(events, 'publish');
   // Mocks stand in for the Mongoose model and the types service; cast through unknown.
   const svc = new ActivitiesService(
@@ -112,8 +112,11 @@ describe('ActivitiesService', () => {
       expect(photos.files.size).toBe(1);
       expect(model.create).toHaveBeenCalledWith(expect.objectContaining({ submitKey: 'key-2', status: 'submitted' }));
       expect(publish).toHaveBeenCalledWith(
-        'ActivitySubmitted',
-        expect.objectContaining({ activityId: String(rec._id), activityTypeCode: 'tree' }),
+        expect.objectContaining({
+          type: 'ActivitySubmitted',
+          activityId: String(rec._id),
+          payload: expect.objectContaining({ activityTypeCode: 'tree' }),
+        }),
       );
     });
 
@@ -397,8 +400,8 @@ describe('ActivitiesService', () => {
         to: 'accepted',
         reasonCode: null,
       });
-      expect(publish.mock.calls.map((c) => c[0])).toEqual(['ActivityDecided', 'ActivityAccepted']);
-      expect(publish.mock.calls[1][1]).toMatchObject({ activityTypeCode: 'tree', category: 'planting' });
+      expect(publish.mock.calls.map((c) => c[0].type)).toEqual(['ActivityDecided', 'ActivityAccepted']);
+      expect(publish.mock.calls[1]![0].payload).toMatchObject({ activityTypeCode: 'tree', category: 'planting' });
     });
     it('decide changes only status fields, never the submitted details (FR-015, AC 5)', async () => {
       const { model, svc } = setup();
@@ -419,8 +422,8 @@ describe('ActivitiesService', () => {
       const { model, svc, publish } = setup();
       model.findOneAndUpdate.mockReturnValue(chain(decided({ status: 'rejected' })));
       await svc.decide(new Types.ObjectId(), 'rejected', 'verification.evidenceUnrelated');
-      expect(publish.mock.calls.map((c) => c[0])).toEqual(['ActivityDecided']);
-      expect(publish.mock.calls[0][1]).toMatchObject({
+      expect(publish.mock.calls.map((c) => c[0].type)).toEqual(['ActivityDecided']);
+      expect(publish.mock.calls[0]![0].payload).toMatchObject({
         status: 'rejected',
         reasonCode: 'verification.evidenceUnrelated',
       });
@@ -430,7 +433,7 @@ describe('ActivitiesService', () => {
       types.findById.mockRejectedValue(new Error('gone'));
       model.findOneAndUpdate.mockReturnValue(chain(decided()));
       await svc.decide(new Types.ObjectId(), 'accepted', null);
-      expect(publish.mock.calls.map((c) => c[0])).toEqual(['ActivityDecided']);
+      expect(publish.mock.calls.map((c) => c[0].type)).toEqual(['ActivityDecided']);
     });
     it('markPending moves submitted once, then only updates the reason code (FR-028)', async () => {
       const { model, svc } = setup();
