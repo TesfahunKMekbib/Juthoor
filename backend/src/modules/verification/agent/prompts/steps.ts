@@ -1,4 +1,4 @@
-import type { GenerateRequest, ModelPart } from '../../../integration/ai/multimodal-model.js';
+import type { GenerateRequest, ModelPart } from '../../../../../libs/integration/ai/multimodal-model.js';
 import type { IssueCode } from '../findings.js';
 import { claimSchema, evidenceSchema, followupSchema } from '../findings.js';
 import { claimContext, imageParts, SYSTEM_PROMPT, quoteUntrusted, type AgentInput } from './common.js';

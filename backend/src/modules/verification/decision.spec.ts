@@ -1,7 +1,7 @@
 import { decideOutcome, validateThresholds, ThresholdError } from './decide-outcome.js';
 import { retryPolicy } from './retry-policy.js';
 import { parseVerificationConfig } from './verification-config.js';
-import { AiConfigError } from '../integration/ai/env.js';
+import { AiConfigError } from '../../../libs/integration/ai/env.js';
 
 const t = { accept: 0.7, reject: 0.3 };
 

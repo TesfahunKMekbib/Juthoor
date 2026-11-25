@@ -1,8 +1,8 @@
 import { jest } from '@jest/globals';
 import { type ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { ParticipantGuard } from '../common/identity/participant.guard.js';
-import type { ParticipantRequest } from '../common/identity/participant.js';
+import { ParticipantGuard } from '../../libs/common/identity/participant.guard.js';
+import type { ParticipantRequest } from '../../libs/common/identity/participant.js';
 import {
   DEV_PARTICIPANT_HEADER,
   DEV_PARTICIPANT_ID,

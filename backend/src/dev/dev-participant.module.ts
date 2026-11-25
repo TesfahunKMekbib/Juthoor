@@ -2,7 +2,7 @@
 // NODE_ENV=development and JUTHOOR_DEV_PARTICIPANT=true. The production image deletes dist/src/dev.
 import { type MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
 import { Logger } from '@nestjs/common';
-import { PARTICIPANT_RESOLVER } from '../common/identity/participant.js';
+import { PARTICIPANT_RESOLVER } from '../../libs/common/identity/participant.js';
 import { DEV_PARTICIPANT_ID, DevParticipantResolver, devParticipantHeader } from './dev-participant.js';
 
 @Module({

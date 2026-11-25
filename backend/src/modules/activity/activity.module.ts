@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { createLocationCipher } from '../../common/config/app-config.js';
-import { ImageModule } from '../integration/image/image.module.js';
-import { StorageModule } from '../integration/storage/storage.module.js';
+import { createLocationCipher } from '../../../libs/common/config/app-config.js';
+import { ImageModule } from '../../../libs/integration/image/image.module.js';
+import { StorageModule } from '../../../libs/integration/storage/storage.module.js';
 import { ActivitiesController } from './activities.controller.js';
 import { ActivitiesService } from './activities.service.js';
 import { ActivityType, ActivityTypeSchema } from './activity-type.schema.js';

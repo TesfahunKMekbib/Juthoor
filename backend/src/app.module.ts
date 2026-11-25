@@ -1,8 +1,8 @@
 import { type DynamicModule, Module, type Type } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { devParticipantMode } from './common/config/dev-participant-mode.js';
-import { EventsModule } from './common/events/events.module.js';
-import { IdentityModule } from './common/identity/identity.module.js';
+import { devParticipantMode } from '../libs/common/config/dev-participant-mode.js';
+import { EventsModule } from '../libs/common/events/events.module.js';
+import { IdentityModule } from '../libs/common/identity/identity.module.js';
 import { ActivityModule } from './modules/activity/activity.module.js';
 import { VerificationModule } from './modules/verification/verification.module.js';
 

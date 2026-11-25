@@ -1,4 +1,4 @@
-import type { AgentStep, ResponseSchema } from '../../integration/ai/multimodal-model.js';
+import type { AgentStep, ResponseSchema } from '../../../../libs/integration/ai/multimodal-model.js';
 import { validateAgainstSchema } from './schema-validator.js';
 
 /** Bump when a response schema changes (recorded in audit, FR-054). */
