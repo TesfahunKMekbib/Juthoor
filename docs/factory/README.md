@@ -36,7 +36,7 @@ Claude Code session with their own login.
 | `docs/traceability.md` | FR → status → code → tests |
 | `docs/adr/` | Architecture decisions |
 | `docs/features/<id>/` | Per-feature `spec.md`, `plan.md`, `review.md` (agent hand-off files) |
-| `.github/` | CI workflows, PR/issue templates, CODEOWNERS, Dependabot |
+| `.github/` | PR/issue templates, CODEOWNERS (CI workflows and Dependabot arrive with PR #3) |
 
 ## 3. Skills
 | Command | Does | Agents used |
@@ -78,7 +78,7 @@ the team merges `feature` into `main` once; from then on task branches start fro
 (update `.claude/rules/git.md` and `/start-task` when that happens). Dependabot and CODEOWNERS take effect
 from `main`.
 
-**Ownership:** replace the commented placeholders in `.github/CODEOWNERS` with teammates' GitHub usernames.
+**Ownership:** `.github/CODEOWNERS` routes reviews only for the factory (`.claude/`, `.github/`, `CLAUDE.md`) and `docs/requirements/`; application code has no code owner.
 
 ## 5. CI quality gates
 | Workflow | Blocking checks | Reporting-only (baseline debt) |
