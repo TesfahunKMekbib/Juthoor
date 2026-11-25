@@ -11,6 +11,8 @@ Baseline recorded 2026-11-22 from the repository analysis. Rows of the Add an Ac
 old paths (`backend/activity-service/`, `backend/modules/`) were removed by ADR-0004.
 Path prefixes: `act/` = `backend/src/modules/activity/`, `ver/` = `backend/src/modules/verification/`,
 `int/` = `backend/src/modules/integration/`, `be2e/` = `backend/test/`, `fl/` = `frontend/lib/`, `ft/` = `frontend/test/`.
+Proposed, not applied: ADR-0013 / `docs/features/arch-microservices/plan.md` would move these paths to
+`backend/apps/*` and `backend/libs/*`; the prefixes are updated when the move slices merge (no status changes).
 
 | FR | ★ | Status | Code | Tests | Notes |
 |---|---|---|---|---|---|
