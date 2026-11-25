@@ -1,0 +1,29 @@
+name: Bug report
+description: Something does not behave as an approved requirement says
+title: "fix: <short summary>"
+labels: ["type:bug"]
+body:
+  - type: input
+    id: requirement
+    attributes:
+      label: Related requirement
+      placeholder: FR-019 (or "none")
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [backend, flutter, ci, docs]
+    validations:
+      required: true

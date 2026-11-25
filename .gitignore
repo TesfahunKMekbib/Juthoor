@@ -273,3 +273,7 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# ---- Juthoor / Claude Code (personal, never commit) ----
+.claude/settings.local.json
+CLAUDE.local.md
