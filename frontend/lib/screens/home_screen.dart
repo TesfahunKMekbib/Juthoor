@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import 'impact_screen.dart';
 import 'my_activities_screen.dart';
 import 'record_activity_screen.dart';
 
@@ -43,11 +44,13 @@ class _HomeShellState extends State<HomeShell> {
             ? const HomePage()
             : _index == 1
                 ? const MyActivitiesScreen()
-                : Center(
-                    child: Text(tabs[_index],
-                        style: const TextStyle(
-                            color: AppColors.textSecondary, fontSize: 18)),
-                  ),
+                : _index == 2
+                    ? const ImpactScreen()
+                    : Center(
+                        child: Text(tabs[_index],
+                            style: const TextStyle(
+                                color: AppColors.textSecondary, fontSize: 18)),
+                      ),
       ),
       bottomNavigationBar: _BottomNav(
         tabs: tabs,
