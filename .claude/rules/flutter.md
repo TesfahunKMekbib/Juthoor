@@ -1,6 +1,8 @@
 ---
 paths:
   - "frontend/**"
+  - "lib/**"
+  - "test/**"
 ---
 # Flutter rules (Flutter 3.47 · Dart 3.13)
 

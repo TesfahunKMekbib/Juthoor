@@ -26,6 +26,12 @@ Never invent requirements, statuses, categories, or fields. Look requirements up
 - `.claude/` — shared agents, skills, rules, hooks. `.github/` — CI, templates, CODEOWNERS.
 Known baseline debt: the backend does not compile yet (Q-D1). Do not "fix" it outside an approved task.
 
+**Layout status (temporary):** the layout above is the target and arrives with the Phase 0 PR (#3). Until it is
+merged on your branch, the Flutter app may still live at the repo root (`lib/`, `pubspec.yaml`) and `backend/`
+may have no `package.json`. Then: run Flutter commands from the folder that holds `pubspec.yaml`; backend
+`npm` commands are **temporarily unavailable** (do not create a `package.json` or move files to make them work —
+that is PR #3's job). `/verify` detects the layout and reports unavailable checks as SKIP.
+
 ## Commands
 | Purpose | Backend (`cd backend`) | Frontend (`cd frontend`) |
 |---|---|---|
