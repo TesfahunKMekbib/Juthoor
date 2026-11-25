@@ -3,7 +3,7 @@
 // No participants collection is needed: the dev participant has no user document (ADR-0010).
 import { fileURLToPath } from 'node:url';
 import mongoose, { type Model } from 'mongoose';
-import { ActivityType, ActivityTypeSchema } from '../modules/activity/activity-type.schema.js';
+import { ActivityType, ActivityTypeSchema } from '../../apps/activity-service/src/activity/activity-type.schema.js';
 
 type SeedType = Pick<
   ActivityType,

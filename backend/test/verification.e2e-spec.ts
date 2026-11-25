@@ -407,7 +407,7 @@ describe('phase B: explicit driving, duplicate processing and racing sweeps (FR-
   });
 
   const svc = async (h: Harness) => {
-    const { VerificationService } = await import('../src/modules/verification/verification.service.js');
+    const { VerificationService } = await import('../apps/verification-service/src/verification/verification.service.js');
     return h.app.get(VerificationService);
   };
   const totalCalls = () => h1.model.calls.length + h2.model.calls.length;
@@ -445,7 +445,7 @@ describe('phase B: explicit driving, duplicate processing and racing sweeps (FR-
 
   it('a duplicate run of the same job (lease expiry race) decides and audits once (FR-028, FR-054)', async () => {
     const id = await submit(h1);
-    const { JOB_STORE } = await import('../src/modules/verification/job-store.js');
+    const { JOB_STORE } = await import('../apps/verification-service/src/verification/job-store.js');
     const store = h1.app.get<{
       enqueue(id: string, now: Date): Promise<boolean>;
       claimOne(id: string, now: Date, leaseMs: number): Promise<unknown>;

@@ -1,4 +1,4 @@
-import type { ModelPart } from '../../../../../libs/integration/ai/multimodal-model.js';
+import type { ModelPart } from '../../../../../../libs/integration/ai/multimodal-model.js';
 
 /** Bump when any prompt text changes (recorded in audit, FR-054). */
 export const PROMPT_VERSION = 'prompts-v2';

@@ -14,9 +14,9 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
-import { uploadLimits } from '../../../libs/common/config/app-config.js';
-import { CurrentParticipant, type ParticipantContext } from '../../../libs/common/identity/participant.js';
-import type { PhotoToStore } from '../../../libs/integration/storage/photo-storage.js';
+import { uploadLimits } from '../../../../libs/common/config/app-config.js';
+import { CurrentParticipant, type ParticipantContext } from '../../../../libs/common/identity/participant.js';
+import type { PhotoToStore } from '../../../../libs/integration/storage/photo-storage.js';
 import { ActivitiesService } from './activities.service.js';
 import { UploadErrorsInterceptor } from './upload-errors.interceptor.js';
 

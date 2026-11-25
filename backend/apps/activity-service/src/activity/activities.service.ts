@@ -2,25 +2,25 @@ import { BadRequestException, Inject, Injectable, Logger, NotFoundException } fr
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'node:crypto';
 import { isValidObjectId, Model, Types } from 'mongoose';
-import type { FieldCipher } from '../../../libs/common/crypto/field-cipher.js';
+import type { FieldCipher } from '../../../../libs/common/crypto/field-cipher.js';
 import {
   type ErrorDetail,
   ValidationFailedException,
-} from '../../../libs/common/errors/validation-failed.exception.js';
-import { EventsService } from '../../../libs/common/events/events.service.js';
+} from '../../../../libs/common/errors/validation-failed.exception.js';
+import { EventsService } from '../../../../libs/common/events/events.service.js';
 import {
   EVIDENCE_SANITIZER,
   EvidenceRejectedError,
   type EvidenceSanitizer,
   type SanitizedEvidence,
-} from '../../../libs/integration/image/evidence-sanitizer.js';
-import { detectImageType } from '../../../libs/integration/image/image-signature.js';
+} from '../../../../libs/integration/image/evidence-sanitizer.js';
+import { detectImageType } from '../../../../libs/integration/image/image-signature.js';
 import {
   PHOTO_STORAGE,
   type PhotoStorage,
   type PhotoToStore,
   type StoredPhoto,
-} from '../../../libs/integration/storage/photo-storage.js';
+} from '../../../../libs/integration/storage/photo-storage.js';
 import { ActivityTypesService, type ActivityTypeRecord } from './activity-types.service.js';
 import { Activity, ACTIVITY_STATUSES, type ActivityLocation, type ActivityStatus } from './activity.schema.js';
 import { LOCATION_CIPHER } from './activity.tokens.js';

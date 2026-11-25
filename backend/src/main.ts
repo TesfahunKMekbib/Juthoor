@@ -5,7 +5,7 @@ import { loadAppConfig } from '../libs/common/config/app-config.js';
 import { assertDevParticipantAllowed } from '../libs/common/config/dev-participant-mode.js';
 import { ApiExceptionFilter } from '../libs/common/errors/http-exception.filter.js';
 import { assertAiProviderAllowed, parseAiConfig } from '../libs/integration/ai/ai-config.js';
-import { parseVerificationConfig } from './modules/verification/verification-config.js';
+import { parseVerificationConfig } from '../apps/verification-service/src/verification/verification-config.js';
 
 async function bootstrap(): Promise<void> {
   // Fail fast, before anything listens (ADR-0010, ADR-0012, plan section 4).

@@ -1,4 +1,4 @@
-// Builds the app: runs tsc, then copies the non-TypeScript data files tsc ignores ({src,libs}/**/data/*.json,
+// Builds the app: runs tsc, then copies the non-TypeScript data files tsc ignores ({src,apps,libs}/**/data/*.json,
 // read through import.meta.url) into the output folder. None exist while FR-020 is deferred (plan §7).
 // Usage: node scripts/build.mjs [outDir]   (default: dist)
 import { spawnSync } from 'node:child_process';
@@ -27,8 +27,8 @@ function dataFiles(dir) {
   return found;
 }
 
-// src/ and libs/ (plan T1: shared code moved to libs/, e.g. a future libs/integration/geo/data dataset).
-for (const file of ['src', 'libs'].flatMap((d) => dataFiles(join(root, d)))) {
+// src/, apps/ and libs/ (plan T1/T2: shared code in libs/, services in apps/; e.g. a future libs/integration/geo/data dataset).
+for (const file of ['src', 'apps', 'libs'].flatMap((d) => dataFiles(join(root, d)))) {
   const target = join(outDir, relative(root, file));
   mkdirSync(dirname(target), { recursive: true });
   cpSync(file, target);

@@ -1,12 +1,12 @@
 import { Logger } from '@nestjs/common';
 import { Types } from 'mongoose';
-import type { ActivitiesService } from '../activity/activities.service.js';
-import { WAITING_STATUSES } from '../activity/activities.service.js';
-import type { ActivityTypesService } from '../activity/activity-types.service.js';
-import { RULES_VERSION } from '../activity/submission-rules.js';
+import type { ActivitiesService } from '../../../activity-service/src/activity/activities.service.js';
+import { WAITING_STATUSES } from '../../../activity-service/src/activity/activities.service.js';
+import type { ActivityTypesService } from '../../../activity-service/src/activity/activity-types.service.js';
+import { RULES_VERSION } from '../../../activity-service/src/activity/submission-rules.js';
 import type { AuditService } from '../audit/audit.service.js';
-import { ModelError } from '../../../libs/integration/ai/multimodal-model.js';
-import type { PhotoStorage } from '../../../libs/integration/storage/photo-storage.js';
+import { ModelError } from '../../../../libs/integration/ai/multimodal-model.js';
+import type { PhotoStorage } from '../../../../libs/integration/storage/photo-storage.js';
 import { buildAgentInput } from './agent-input.js';
 import { AgentTechnicalError, type VerificationAgent } from './agent/verification-agent.js';
 import { decideOutcome, type Thresholds } from './decide-outcome.js';

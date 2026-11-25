@@ -1,5 +1,5 @@
 import { Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
-import type { EventsService } from '../../../libs/common/events/events.service.js';
+import type { EventsService } from '../../../../libs/common/events/events.service.js';
 import type { VerificationService } from './verification.service.js';
 
 /**
