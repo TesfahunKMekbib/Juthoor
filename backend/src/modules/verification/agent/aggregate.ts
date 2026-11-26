@@ -1,7 +1,7 @@
 import type { ClaimFindings, EvidenceFindings, FollowupFindings, IssueCode, PhotoFlag, Verdict } from './findings.js';
 
 /** Bump when any weight, cap or rule below changes (recorded in audit, FR-054). Calibrate with the real provider (Q-C3). */
-export const AGGREGATION_VERSION = 'agg-v2';
+export const AGGREGATION_VERSION = 'agg-v3';
 
 /** Flags that always cap the score below the default accept threshold (ADR-0012 section 3). */
 export const HARD_FLAGS: readonly PhotoFlag[] = [
@@ -18,6 +18,10 @@ export const UNRELATED_CAP = 0.2;
 const QUALITY_FACTOR = { good: 1, fair: 0.85, poor: 0.6 } as const;
 const CLAIM_NO_FACTOR = 0.5;
 const CLAIM_UNCLEAR_FACTOR = 0.9;
+/** Share of the score an entirely unmet criteria list removes (one unmet of one halves it). */
+const CRITERIA_UNMET_WEIGHT = 0.5;
+/** For these claim fields the photos often cannot show the answer, so "unclear" is neutral. */
+const UNCLEAR_IS_NEUTRAL: ReadonlySet<string> = new Set(['amount', 'date']);
 const FOLLOWUP_NO_CEIL = 0.25;
 const SEVERITY: Record<Verdict, number> = { yes: 0, unclear: 1, no: 2 };
 const CONFLICT_HIGH = 0.7;
@@ -114,7 +118,7 @@ function aggregateOnce(input: AggregateInput): AggregateResult {
 
   const unmet = new Set(evidence.criteriaUnmet).size;
   if (input.criteriaCount > 0 && unmet > 0) {
-    score *= clamp01(1 - unmet / input.criteriaCount);
+    score *= clamp01(1 - CRITERIA_UNMET_WEIGHT * (unmet / input.criteriaCount));
     reasonCodes.push('evidence.criteriaUnmet');
   }
 
@@ -129,7 +133,7 @@ function aggregateOnce(input: AggregateInput): AggregateResult {
     if (v === 'no') {
       score *= CLAIM_NO_FACTOR;
       reasonCodes.push(claimCodes[key]);
-    } else if (v === 'unclear') {
+    } else if (v === 'unclear' && !UNCLEAR_IS_NEUTRAL.has(key)) {
       score *= CLAIM_UNCLEAR_FACTOR;
     }
   }

@@ -252,7 +252,8 @@ describe('phase A: real worker, mock provider (AC 14-18, 24, 25, 30)', () => {
     const id = await submit(h);
     const a = await finalStatus(h, id, DECIDED);
     expect(a.status).toBe('rejected');
-    expect(a.resultReasonCode).toBe('verification.evidenceUnrelated');
+    // Fix 6 (FR-027): the specific cause is recorded instead of the generic evidenceUnrelated fallback.
+    expect(a.resultReasonCode).toBe('verification.lowRelevance');
     expect(a.acceptedAmount).toBeNull();
     expect(h.accepted).not.toContain(id);
     expect((await auditOf(h, id)).filter((e) => e.action === 'verification.decision')).toHaveLength(1);

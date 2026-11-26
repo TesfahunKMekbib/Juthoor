@@ -11,7 +11,29 @@ export interface Thresholds {
 export interface Outcome {
   status: DecidedStatus;
   /** Status reason code (plan section 1); null when accepted. */
-  reasonCode: 'verification.evidenceUnclear' | 'verification.evidenceUnrelated' | null;
+  reasonCode: string | null;
+}
+
+/**
+ * Aggregate reason code to status reason code, highest priority first (FR-027). Stored codes of older records
+ * (verification.evidenceUnclear, verification.evidenceUnrelated) stay valid as the fallbacks.
+ */
+const REASON_PRIORITY: readonly (readonly [string, string])[] = [
+  ['evidence.hardFlag', 'verification.suspectedManipulation'],
+  ['evidence.unrelatedScene', 'verification.unrelatedScene'],
+  ['claim.beforeAfterInconsistent', 'verification.beforeAfterInconsistent'],
+  ['claim.descriptionMismatch', 'verification.descriptionMismatch'],
+  ['claim.amountImplausible', 'verification.amountImplausible'],
+  ['claim.dateImplausible', 'verification.dateImplausible'],
+  ['evidence.criteriaUnmet', 'verification.criteriaUnmet'],
+  ['evidence.lowRelevance', 'verification.lowRelevance'],
+  ['evidence.lowConfidence', 'verification.lowConfidence'],
+];
+
+/** Pure: the most specific status reason code for a non-accepted outcome, or the given fallback. */
+export function specificReasonCode(reasonCodes: readonly string[], fallback: string): string {
+  for (const [code, reason] of REASON_PRIORITY) if (reasonCodes.includes(code)) return reason;
+  return fallback;
 }
 
 export class ThresholdError extends Error {
@@ -33,11 +55,14 @@ export function validateThresholds(t: Thresholds): void {
  * score and thresholds to an outcome. An invalid score (NaN, out of range) throws, so it can never be
  * turned into an acceptance; callers treat that as a technical failure (FR-028).
  */
-export function decideOutcome(score: number, thresholds: Thresholds): Outcome {
+export function decideOutcome(score: number, thresholds: Thresholds, reasonCodes: readonly string[] = []): Outcome {
   validateThresholds(thresholds);
   if (!inUnit(score)) throw new RangeError('score must be within [0,1]');
   if (score >= thresholds.accept) return { status: 'accepted', reasonCode: null };
   if (score >= thresholds.reject)
-    return { status: 'returned_for_correction', reasonCode: 'verification.evidenceUnclear' };
-  return { status: 'rejected', reasonCode: 'verification.evidenceUnrelated' };
+    return {
+      status: 'returned_for_correction',
+      reasonCode: specificReasonCode(reasonCodes, 'verification.evidenceUnclear'),
+    };
+  return { status: 'rejected', reasonCode: specificReasonCode(reasonCodes, 'verification.evidenceUnrelated') };
 }

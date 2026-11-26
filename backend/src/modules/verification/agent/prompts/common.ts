@@ -1,7 +1,7 @@
 import type { ModelPart } from '../../../../../libs/integration/ai/multimodal-model.js';
 
 /** Bump when any prompt text changes (recorded in audit, FR-054). */
-export const PROMPT_VERSION = 'prompts-v2';
+export const PROMPT_VERSION = 'prompts-v3';
 
 const MAX_UNTRUSTED_CHARS = 1000;
 const OPEN = '<<<UNTRUSTED_DATA';

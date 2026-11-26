@@ -281,6 +281,18 @@ describe('VerificationService', () => {
     expect(s2.published.some((p) => p.name === 'ActivityAccepted')).toBe(false);
   });
 
+  it('stores the specific reason code derived from the aggregate reason codes (FR-027)', async () => {
+    const s = setup({
+      agent: { assess: () => Promise.resolve({ ...assessment(0.2), reasonCodes: ['evidence.hardFlag'] }) },
+    });
+    const id = await s.addActivity();
+    await s.svc.onSubmitted(id);
+    expect(s.activityModel.docs.get(id)).toMatchObject({
+      status: 'rejected',
+      resultReasonCode: 'verification.suspectedManipulation',
+    });
+  });
+
   it('writes one audit entry per flag with ai.<flag> codes, IDs and codes only (ADR-0008)', async () => {
     const s = setup({ agent: fixedAgent(0.9, ['low_quality', 'low_quality', 'people_visible']) });
     const id = await s.addActivity();
