@@ -75,6 +75,18 @@
    stays with application credentials (HMAC signature, service key, SCRAM, per-DB users, storage keys). Dev/CI
    certificates come from a throwaway CA generated at runtime by a script, mounted read-only, never committed.
    mTLS is a later config-only upgrade. Production services refuse to boot with plaintext config. Plan §5.1.
+8b. **Demo environment (owner, 2026-11-25: *"GEMINI_API_KEY and MONGODB_URI are already configured in
+   backend/.env. Proceed using MongoDB Atlas and real Gemini verification for the demo. Retain the mock provider
+   for testing and continue the migration without exposing secrets."*).** The demo runs the per-service databases
+   (`juthoor_activity`, `juthoor_verification`) on a MongoDB Atlas cluster over `mongodb+srv` (TLS ≥ 1.2, consistent
+   with 8a, NFR-005), each service with its own `MONGODB_URI` and, recommended, its own least-privilege database
+   user (Q-F11). Real Gemini runs only in verification-service and only with `NODE_ENV` development/test (ADR-0012
+   decision 10 production guard, NFR-009); `GEMINI_API_KEY`/`AI_MODEL` never reach the gateway or activity-service.
+   Tests and CI use local MongoDB and the mock provider only; test helpers refuse non-local Mongo URIs (plan T14).
+   Connection strings and keys live only in untracked env files, are never committed or logged (NFR-033). Default
+   compose = local Mongo + mock; `compose.demo.yml` = Atlas + Gemini. The free-tier demo cluster does not evidence
+   NFR-022/027/034/035/036. Plan §5.2; open: Q-F10, Q-F11.
+
 9. **Deployment.** One Dockerfile per service; `docker compose` brings up gateway, services, broker, databases
    and storage (NFR-038). Horizontal scaling by adding instances (NFR-027) is preserved by job leases, consumer
    groups and idempotent handlers.
@@ -113,6 +125,6 @@
 - **Off-the-shelf gateway (Kong, Traefik, nginx)**: see plan §3; rejected for now because ADR-0010 resolution,
   the bilingual error shape and identity signing would need custom plugins.
 
-Related: FR-015, FR-018–021, FR-025–028, FR-032, FR-046, FR-054; NFR-002, NFR-004, NFR-005, NFR-007, NFR-020,
-NFR-023, NFR-024, NFR-026, NFR-027, NFR-030, NFR-033, NFR-036, NFR-038; Q-A8, Q-A9, Q-E8, Q-E9, Q-F1–Q-F9;
+Related: FR-015, FR-018–021, FR-025–028, FR-032, FR-046, FR-054; NFR-002, NFR-004, NFR-005, NFR-007, NFR-009, NFR-020,
+NFR-023, NFR-024, NFR-026, NFR-027, NFR-022, NFR-030, NFR-033, NFR-034, NFR-035, NFR-036, NFR-038; Q-A8, Q-A9, Q-E8, Q-E9, Q-F1–Q-F11;
 ADR-0004, ADR-0006, ADR-0010, ADR-0012.
