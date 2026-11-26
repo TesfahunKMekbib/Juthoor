@@ -1,13 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:juthoor/main.dart';
+import 'package:juthoor/services/activity_api.dart';
+import 'package:provider/provider.dart';
+
+import 'fakes/fake_activity_api.dart';
 
 void main() {
   tearDown(() => appLocale.value = null);
 
   Future<TextDirection> pumpAppAs(WidgetTester tester, Locale locale) async {
     appLocale.value = locale;
-    await tester.pumpWidget(const JuthoorApp());
+    await tester.pumpWidget(
+      Provider<ActivityApi>.value(
+        value: FakeActivityApi(),
+        child: const JuthoorApp(),
+      ),
+    );
     await tester.pumpAndSettle();
     return Directionality.of(tester.element(find.byType(Scaffold).first));
   }

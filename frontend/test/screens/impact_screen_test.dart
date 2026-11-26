@@ -12,6 +12,7 @@ import 'package:juthoor/l10n/app_localizations_en.dart';
 import 'package:juthoor/screens/home_screen.dart';
 import 'package:juthoor/screens/impact_screen.dart';
 
+import '../fakes/fake_activity_api.dart';
 import '../helpers/pump_app.dart';
 
 AppLocalizations _l10n(String code) =>
@@ -156,15 +157,14 @@ void main() {
       handle.dispose();
     });
 
-    testWidgets('HomeShell Impact tab shows ImpactScreen [$code] (NFR-016)',
+    // Impact figures are sample data until the feature is implemented, so
+    // HomeShell hides the tab (demo cleanup); the screen itself is unchanged.
+    testWidgets('HomeShell hides the Impact tab [$code] (NFR-016)',
         (tester) async {
-      await _pump(tester, const HomeShell(), code: code);
+      await pumpWithFakes(tester, const HomeShell(), Fakes(),
+          locale: Locale(code));
       expect(find.byType(ImpactScreen), findsNothing);
-      expect(find.text(l.impactTitle), findsWidgets); // Home card title
-      await tester.tap(find.text(l.tabImpact).last);
-      await tester.pumpAndSettle();
-      expect(find.byType(ImpactScreen), findsOneWidget);
-      expect(find.text(l.impactAudienceMe), findsOneWidget);
+      expect(find.text(l.tabImpact), findsNothing);
       expect(tester.takeException(), isNull);
     });
   }
