@@ -49,6 +49,16 @@ String statusBody(AppLocalizations l10n, ActivityStatus s) => switch (s) {
 const _reasonCodes = {
   'verification.evidenceUnclear',
   'verification.evidenceUnrelated',
+  'verification.suspectedManipulation',
+  'verification.unrelatedScene',
+  'verification.beforeAfterInconsistent',
+  'verification.descriptionMismatch',
+  'verification.amountImplausible',
+  'verification.dateImplausible',
+  'verification.criteriaUnmet',
+  'verification.lowRelevance',
+  'verification.lowConfidence',
+  'verification.notEnvironmental',
   'processing.retrying',
   'processing.failedPermanently',
 };
@@ -324,11 +334,12 @@ class _Details extends StatelessWidget {
               child: Text(reasonText(l10n, reason)),
             ),
           const Divider(height: 24),
-          row(l10n.typeLabel, v.activityType.name.of(locale)),
+          row(l10n.typeLabel, v.displayName(locale)),
           if (v.description.isNotEmpty)
             row(l10n.descriptionLabel, v.description),
           for (final a in v.answers)
-            row(a.label.of(locale), '${a.value ?? ''}'),
+            if (!(a.key == 'activityName' && v.customName != null))
+              row(a.label.of(locale), '${a.value ?? ''}'),
           if (v.amount != null) row(l10n.amountPlain, amountText(v.amount!)),
           if (v.acceptedAmount != null)
             row(l10n.acceptedAmountLabel, amountText(v.acceptedAmount!)),

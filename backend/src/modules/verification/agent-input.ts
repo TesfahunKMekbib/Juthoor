@@ -19,6 +19,7 @@ export function buildAgentInput(
       category: type.category,
       criteria: [{ id: 'c1', text: type.description.en }],
       requiresBeforeAfter: kinds.includes('before') && kinds.includes('after'),
+      environmentalCheck: type.category === 'other',
     },
     photos,
     description: subject.description,

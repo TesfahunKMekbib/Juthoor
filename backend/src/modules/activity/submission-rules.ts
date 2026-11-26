@@ -1,7 +1,7 @@
 import { EMIRATES, PHOTO_KINDS } from './activity.schema.js';
 
 /** Version of the deterministic rule set; recorded with every decision (FR-018, FR-054). */
-export const RULES_VERSION = 'rules-2'; // rules-2: manual emirate only, device GPS refused (FR-020 deferred)
+export const RULES_VERSION = 'rules-3'; // rules-3: optional quantity + unit allowlist for OTHER; rules-2: manual emirate only (FR-020 deferred)
 
 export type FieldErrorCode =
   | 'activityType.required'
@@ -18,6 +18,8 @@ export type FieldErrorCode =
   | 'answers.invalidChoice'
   | 'answers.tooLong'
   | 'amount.required'
+  | 'amount.unitRequired'
+  | 'amount.unitInvalid'
   | 'amount.outOfRange'
   | 'photos.tooFew'
   | 'photos.tooMany'
@@ -37,8 +39,15 @@ export interface FieldError {
 
 /** The parts of an activity type the rules need. */
 export interface TypeRules {
-  formFields: { key: string; label: { en: string }; type: string; options: string[]; required: boolean }[];
-  amount: { unit: string; min: number; max: number };
+  formFields: {
+    key: string;
+    label: { en: string };
+    type: string;
+    options: string[];
+    required: boolean;
+    maxLength?: number;
+  }[];
+  amount: { unit: string; min: number; max: number; optional?: boolean; units?: string[] };
   photoRules: { minPhotos: number; maxPhotos: number; neededKinds: string[]; maxSizeMB: number };
 }
 
@@ -69,7 +78,8 @@ export interface CleanSubmission {
     area: string;
   };
   answers: Record<string, string | number>;
-  amountValue: number;
+  /** Null when the type's quantity is optional and none was given (OTHER). */
+  amount: { value: number; unit: string } | null;
   photoKinds: string[];
 }
 
@@ -150,7 +160,8 @@ export function checkSubmission(
         continue;
       }
       const s = String(raw).trim();
-      if (s.length > 200) add(field, 'answers.tooLong', `${f.label.en} is too long.`, { ...params, max: 200 });
+      const max = f.maxLength ?? 200;
+      if (s.length > max) add(field, 'answers.tooLong', `${f.label.en} is too long.`, { ...params, max });
       else answers[f.key] = s;
     }
   }
@@ -159,9 +170,32 @@ export function checkSubmission(
   const amount = isObject(input.amount) ? input.amount : {};
   const amountValue = toNumber(amount.value);
   const { min, max, unit } = type.amount;
-  if (amountValue === null) add('amount.value', 'amount.required', `Please enter how many ${unit}.`, { unit });
+  let cleanAmount: { value: number; unit: string } | null = null;
+  const rawUnit = typeof amount.unit === 'string' ? amount.unit.trim() : '';
+  const noValue = amount.value === undefined || amount.value === null || String(amount.value).trim() === '';
+  if (type.amount.optional) {
+    const units = type.amount.units?.length ? type.amount.units : [unit];
+    if (noValue && !rawUnit) {
+      // no quantity: allowed for this type
+    } else if (noValue || amountValue === null) {
+      add('amount.value', 'amount.required', 'Please enter the quantity.', { unit });
+    } else if (!rawUnit) {
+      add('amount.unit', 'amount.unitRequired', 'Please choose a unit.');
+    } else if (!units.includes(rawUnit)) {
+      add('amount.unit', 'amount.unitInvalid', 'Please choose a valid unit.', { unit: rawUnit.slice(0, 20) });
+    } else if (amountValue < min || amountValue > max) {
+      add('amount.value', 'amount.outOfRange', `Enter between ${min} and ${max} ${rawUnit}.`, {
+        min,
+        max,
+        unit: rawUnit,
+      });
+    } else {
+      cleanAmount = { value: amountValue, unit: rawUnit };
+    }
+  } else if (amountValue === null) add('amount.value', 'amount.required', `Please enter how many ${unit}.`, { unit });
   else if (amountValue < min || amountValue > max)
     add('amount.value', 'amount.outOfRange', `Enter between ${min} and ${max} ${unit}.`, { min, max, unit });
+  else cleanAmount = { value: amountValue, unit };
 
   // Photos: count, kinds, file type and size (FR-021)
   const pr = type.photoRules;
@@ -195,7 +229,7 @@ export function checkSubmission(
       doneAt: doneAt as Date,
       location: { source, emirate: emirate as string, area },
       answers,
-      amountValue: amountValue as number,
+      amount: cleanAmount,
       photoKinds,
     },
   };

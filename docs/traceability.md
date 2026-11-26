@@ -22,7 +22,7 @@ Proposed, not applied: ADR-0013 / `docs/features/arch-microservices/plan.md` wou
 | FR-004 | | ui-mock | frontend/lib/screens/home_screen.dart | | Hardcoded values |
 | FR-005 | | not-started | | | |
 | FR-006 | | not-started | | | |
-| FR-007 | | partial | act/activity-type.schema.ts, backend/src/dev/seed.ts | backend/src/dev/seed.spec.ts | Dev seed of FR-007 categories only (Q-E5, Q-A4b); no admin catalog |
+| FR-007 | | partial | act/activity-type.schema.ts, backend/src/dev/seed.ts | backend/src/dev/seed.spec.ts | Dev seed of FR-007 categories only (Q-E5, Q-A4b); no admin catalog. Other type planned (`docs/features/other-activity/`, CR-001 pending stakeholders; also touches FR-008/011/018/025) |
 | FR-008 | | partial | act/activity-type.schema.ts (formFields, amount, photoRules) | backend/src/dev/seed.spec.ts | No admin API (out of scope) |
 | FR-009 | ★ | partial | act/activity-types.controller.ts, act/activity-types.service.ts; fl/services/activity_api.dart, fl/screens/record_activity_screen.dart | act/activity-types.service.spec.ts, be2e/activities.e2e-spec.ts; ft/services/activity_api_test.dart, ft/screens/record_activity_screen_test.dart, ft/state/activity_form_controller_test.dart | Fields, ranges, photo rules shown; points-award rules deferred (Rewards out of scope) |
 | FR-010 | ★ | partial | fl/screens/record_activity_screen.dart, fl/state/activity_form_controller.dart | ft/screens/record_activity_screen_test.dart, be2e/activities.e2e-spec.ts | Entry of all fields done; server-side drafts (save/reopen/delete) deferred (Q-E7); `draft` in enum, unused |

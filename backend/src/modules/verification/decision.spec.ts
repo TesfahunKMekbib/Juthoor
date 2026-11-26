@@ -17,6 +17,35 @@ describe('decideOutcome (Q-E2, FR-026, FR-027, AC 15)', () => {
     expect(decideOutcome(score, t)).toEqual({ status, reasonCode });
   });
 
+  it('derives the specific reason by priority when not accepted (FR-027)', () => {
+    const order = [
+      ['evidence.hardFlag', 'verification.suspectedManipulation'],
+      ['evidence.unrelatedScene', 'verification.unrelatedScene'],
+      ['claim.beforeAfterInconsistent', 'verification.beforeAfterInconsistent'],
+      ['claim.descriptionMismatch', 'verification.descriptionMismatch'],
+      ['claim.amountImplausible', 'verification.amountImplausible'],
+      ['claim.dateImplausible', 'verification.dateImplausible'],
+      ['evidence.criteriaUnmet', 'verification.criteriaUnmet'],
+      ['evidence.lowRelevance', 'verification.lowRelevance'],
+      ['evidence.lowConfidence', 'verification.lowConfidence'],
+    ] as const;
+    for (let i = 0; i < order.length; i++) {
+      // every code from i onwards is present: the highest priority one wins whatever the input order
+      const codes = order
+        .slice(i)
+        .map(([code]) => code)
+        .reverse();
+      expect(decideOutcome(0.5, t, codes).reasonCode).toBe(order[i]![1]);
+      expect(decideOutcome(0.1, t, codes).reasonCode).toBe(order[i]![1]);
+    }
+  });
+
+  it('keeps the fallbacks for no or unknown codes and gives an accepted outcome no reason', () => {
+    expect(decideOutcome(0.5, t, []).reasonCode).toBe('verification.evidenceUnclear');
+    expect(decideOutcome(0.1, t, ['something.else']).reasonCode).toBe('verification.evidenceUnrelated');
+    expect(decideOutcome(0.9, t, ['evidence.hardFlag'])).toEqual({ status: 'accepted', reasonCode: null });
+  });
+
   it('never accepts an invalid score (malformed output safety)', () => {
     for (const bad of [NaN, Infinity, -0.1, 1.01]) expect(() => decideOutcome(bad, t)).toThrow(RangeError);
   });

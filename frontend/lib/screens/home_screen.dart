@@ -1,6 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart' show DateFormat;
+import 'package:provider/provider.dart';
+
 import '../l10n/app_localizations.dart';
-import 'impact_screen.dart';
+import '../models/activity_models.dart';
+import '../services/activity_api.dart';
+import '../services/api_exception.dart';
+import '../services/error_messages.dart';
+import 'activity_status_screen.dart';
 import 'my_activities_screen.dart';
 import 'record_activity_screen.dart';
 
@@ -18,6 +25,7 @@ class AppColors {
 }
 
 /// ---------- Shell with bottom navigation ----------
+/// Only implemented destinations are shown (Home, Activities).
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
 
@@ -31,26 +39,12 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final tabs = [
-      l10n.tabHome,
-      l10n.tabActivities,
-      l10n.tabImpact,
-      l10n.tabAssistant,
-      l10n.tabProfile,
-    ];
+    final tabs = [l10n.tabHome, l10n.tabActivities];
     return Scaffold(
       body: SafeArea(
         child: _index == 0
-            ? const HomePage()
-            : _index == 1
-                ? const MyActivitiesScreen()
-                : _index == 2
-                    ? const ImpactScreen()
-                    : Center(
-                        child: Text(tabs[_index],
-                            style: const TextStyle(
-                                color: AppColors.textSecondary, fontSize: 18)),
-                      ),
+            ? HomePage(onViewAll: () => setState(() => _index = 1))
+            : const MyActivitiesScreen(),
       ),
       bottomNavigationBar: _BottomNav(
         tabs: tabs,
@@ -84,32 +78,40 @@ class _BottomNav extends StatelessWidget {
             children: List.generate(tabs.length, (i) {
               final selected = i == currentIndex;
               return Expanded(
-                child: InkWell(
+                child: Semantics(
+                  button: true,
+                  selected: selected,
+                  excludeSemantics: true,
+                  label: tabs[i],
                   onTap: () => onTap(i),
-                  child: Column(
-                    children: [
-                      Container(
-                        height: 3,
-                        color: selected
-                            ? AppColors.greenBright
-                            : Colors.transparent,
-                      ),
-                      Expanded(
-                        child: Center(
-                          child: Text(
-                            tabs[i],
-                            style: TextStyle(
-                              fontSize: 12.5,
-                              fontWeight:
-                                  selected ? FontWeight.w700 : FontWeight.w500,
-                              color: selected
-                                  ? AppColors.textPrimary
-                                  : AppColors.textSecondary,
+                  child: InkWell(
+                    onTap: () => onTap(i),
+                    child: Column(
+                      children: [
+                        Container(
+                          height: 3,
+                          color: selected
+                              ? AppColors.greenBright
+                              : Colors.transparent,
+                        ),
+                        Expanded(
+                          child: Center(
+                            child: Text(
+                              tabs[i],
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: selected
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                                color: selected
+                                    ? AppColors.textPrimary
+                                    : AppColors.textSecondary,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               );
@@ -122,8 +124,44 @@ class _BottomNav extends StatelessWidget {
 }
 
 /// ---------- Home page ----------
-class HomePage extends StatelessWidget {
-  const HomePage({super.key});
+/// Real data only: the participant's own activities from the backend list
+/// call (FR-017). No points, levels, challenges or impact figures are shown
+/// until those features exist.
+class HomePage extends StatefulWidget {
+  final VoidCallback? onViewAll;
+  const HomePage({super.key, this.onViewAll});
+
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  static const _recentCount = 3;
+
+  List<ActivityView>? items;
+  String? errorCode;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => load());
+  }
+
+  Future<void> load() async {
+    final api = context.read<ActivityApi>();
+    setState(() => errorCode = null);
+    try {
+      final r = await api.listActivities();
+      if (mounted) setState(() => items = r);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => errorCode = e.code);
+    }
+  }
+
+  Future<void> _push(Widget screen) async {
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+    if (mounted) load(); // reflect new or updated activities
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -131,180 +169,205 @@ class HomePage extends StatelessWidget {
     return ListView(
       padding: const EdgeInsetsDirectional.fromSTEB(16, 16, 16, 24),
       children: [
-        _Header(name: l10n.mockUserName, subtitle: l10n.homeHeaderSubtitle),
+        _Header(title: l10n.appTitle, subtitle: l10n.homeSubtitle),
         const SizedBox(height: 14),
-        const _PointsCard(
-          points: 1585,
-          streakDays: 5,
-          ptsToNext: 180,
-          nextLevel: 4,
-          badges: 2,
-          totalBadges: 3,
-          progress: 0.72,
-        ),
-        const SizedBox(height: 10),
-        _RecordButton(
-          onPressed: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const RecordActivityScreen(),
-              ),
-            );
-          },
-        ),
-        const SizedBox(height: 10),
-        _ListCard(
-          title: l10n.needsAttentionTitle(5),
-          subtitle: l10n.needsAttentionSubtitle,
-          trailing: const _ChevronIcon(),
-          onTap: () {},
-        ),
-        _SectionTitle(l10n.activeChallenge),
-        _ListCard(
-          title: l10n.metroChallengeTitle,
-          subtitle: l10n.metroChallengeSubtitle,
-          trailing: _GreenValue(l10n.percentValue(0.6)),
-          onTap: () {},
-        ),
-        _SectionTitle(l10n.recommendedForYou, tag: l10n.aiGenerated),
-        _ListCard(
-          title: l10n.rvmTitle,
-          subtitle: l10n.rvmSubtitle,
-          trailing: _GreenValue(l10n.pointsGain(30)),
-          onTap: () {},
-        ),
-        const SizedBox(height: 10),
-        _ListCard(
-          title: l10n.ghafTitle,
-          subtitle: l10n.ghafSubtitle,
-          trailing: _GreenValue(l10n.pointsGain(200)),
-          onTap: () {},
-        ),
-        const SizedBox(height: 10),
-        _ListCard(
-          title: l10n.impactTitle,
-          subtitle: l10n.impactSubtitle,
-          trailing: const _ChevronIcon(),
-          onTap: () {},
-        ),
+        _RecordButton(onPressed: () => _push(const RecordActivityScreen())),
+        ..._content(context, l10n),
       ],
     );
+  }
+
+  List<Widget> _content(BuildContext context, AppLocalizations l10n) {
+    if (errorCode != null) {
+      return [
+        const SizedBox(height: 24),
+        Text(messageForCode(l10n, errorCode!),
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: AppColors.textSecondary)),
+        const SizedBox(height: 12),
+        Center(
+          child: ElevatedButton(onPressed: load, child: Text(l10n.retry)),
+        ),
+      ];
+    }
+    final list = items;
+    if (list == null) {
+      return const [
+        SizedBox(height: 32),
+        Center(child: CircularProgressIndicator()),
+      ];
+    }
+    if (list.isEmpty) {
+      return [
+        const SizedBox(height: 24),
+        _InfoCard(title: l10n.homeEmptyTitle, subtitle: l10n.homeEmptyBody),
+      ];
+    }
+    final locale = Localizations.localeOf(context);
+    final counts = <ActivityStatus, int>{};
+    for (final a in list) {
+      counts[a.status] = (counts[a.status] ?? 0) + 1;
+    }
+    return [
+      const SizedBox(height: 16),
+      Text(l10n.homeTotalActivities(list.length),
+          style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+      const SizedBox(height: 8),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final e in counts.entries)
+            Semantics(
+              label: l10n.homeStatusCountSemantics(
+                  statusLabel(l10n, e.key), e.value),
+              excludeSemantics: true,
+              child: _CountChip(status: e.key, count: e.value),
+            ),
+        ],
+      ),
+      _SectionTitle(l10n.recentActivitiesTitle,
+          actionLabel: l10n.viewAllActivities, onAction: widget.onViewAll),
+      for (final a in list.take(_recentCount)) ...[
+        _ActivityRow(
+          activity: a,
+          locale: locale,
+          onTap: () =>
+              _push(ActivityStatusScreen(activityId: a.id, initial: a)),
+        ),
+        const SizedBox(height: 10),
+      ],
+    ];
   }
 }
 
 /// ---------- Widgets ----------
 class _Header extends StatelessWidget {
-  final String name;
+  final String title;
   final String subtitle;
-  const _Header({required this.name, required this.subtitle});
+  const _Header({required this.title, required this.subtitle});
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(AppLocalizations.of(context).greeting(name),
-                  style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.textPrimary)),
-              const SizedBox(height: 2),
-              Text(subtitle,
-                  style: const TextStyle(
-                      fontSize: 12.5, color: AppColors.textSecondary)),
-            ],
-          ),
-        ),
-        Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: AppColors.card,
-            border: Border.all(color: AppColors.border),
-          ),
-          child: IconButton(
-            padding: EdgeInsets.zero,
-            tooltip: AppLocalizations.of(context).notificationsLabel,
-            icon:
-                const Icon(Icons.notifications, color: Colors.white, size: 20),
-            onPressed: () {},
-          ),
-        ),
+        Text(title,
+            style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary)),
+        const SizedBox(height: 2),
+        Text(subtitle,
+            style: const TextStyle(
+                fontSize: 12.5, color: AppColors.textSecondary)),
       ],
     );
   }
 }
 
-class _PointsCard extends StatelessWidget {
-  final int points, streakDays, ptsToNext, nextLevel, badges, totalBadges;
-  final double progress;
-
-  const _PointsCard({
-    required this.points,
-    required this.streakDays,
-    required this.ptsToNext,
-    required this.nextLevel,
-    required this.badges,
-    required this.totalBadges,
-    required this.progress,
-  });
+class _CountChip extends StatelessWidget {
+  final ActivityStatus status;
+  final int count;
+  const _CountChip({required this.status, required this.count});
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return Container(
-      padding: const EdgeInsetsDirectional.fromSTEB(16, 14, 16, 16),
+      padding:
+          const EdgeInsetsDirectional.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: AppColors.green,
-        borderRadius: BorderRadius.circular(14),
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(l10n.yourPoints,
+          Icon(statusIcon(status), size: 16, color: statusColor(status)),
+          const SizedBox(width: 6),
+          Text('${statusLabel(l10n, status)} · $count',
               style: const TextStyle(
-                  fontSize: 11.5,
-                  letterSpacing: 0.4,
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFFDDEBE2))),
-          const SizedBox(height: 2),
-          Text(l10n.pointsValue(points),
-              style: const TextStyle(
-                  fontSize: 34,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
-                  height: 1.1)),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              const Icon(Icons.water_drop, size: 13, color: Colors.white),
-              const SizedBox(width: 4),
-              Flexible(
-                child: Text(
-                  l10n.pointsStreakSummary(
-                      streakDays, ptsToNext, nextLevel, badges, totalBadges),
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12, color: Colors.white),
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary)),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActivityRow extends StatelessWidget {
+  final ActivityView activity;
+  final Locale locale;
+  final VoidCallback onTap;
+  const _ActivityRow(
+      {required this.activity, required this.locale, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final name = activity.displayName(locale);
+    final status = statusLabel(l10n, activity.status);
+    final date = activity.submittedAt == null
+        ? ''
+        : DateFormat.yMd(locale.toString())
+            .format(activity.submittedAt!.toLocal());
+    return Semantics(
+      button: true,
+      label: '$name, $status, $date',
+      excludeSemantics: true,
+      onTap: onTap,
+      child: Material(
+        color: AppColors.card,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: AppColors.border),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 64),
+            padding: const EdgeInsetsDirectional.symmetric(
+                horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                Icon(statusIcon(activity.status),
+                    color: statusColor(activity.status)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(name,
+                          style: const TextStyle(
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textPrimary)),
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 8,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          StatusChip(status: activity.status),
+                          if (date.isNotEmpty)
+                            Text(date,
+                                style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textSecondary)),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: progress,
-              minHeight: 6,
-              backgroundColor: AppColors.progressTrack,
-              valueColor: const AlwaysStoppedAnimation(AppColors.progressFill),
+                const SizedBox(width: 8),
+                const _ChevronIcon(),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -336,18 +399,17 @@ class _RecordButton extends StatelessWidget {
 
 class _SectionTitle extends StatelessWidget {
   final String text;
-  final String? tag;
-  const _SectionTitle(this.text, {this.tag});
+  final String? actionLabel;
+  final VoidCallback? onAction;
+  const _SectionTitle(this.text, {this.actionLabel, this.onAction});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsetsDirectional.only(top: 18, bottom: 10),
+      padding: const EdgeInsetsDirectional.only(top: 18, bottom: 6),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.baseline,
-        textBaseline: TextBaseline.alphabetic,
         children: [
-          Flexible(
+          Expanded(
             child: Text(text,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -355,88 +417,53 @@ class _SectionTitle extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                     color: AppColors.textPrimary)),
           ),
-          if (tag != null) ...[
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(tag!,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      fontSize: 11,
-                      letterSpacing: 0.5,
-                      fontWeight: FontWeight.w500,
-                      color: AppColors.greenBright)),
+          if (actionLabel != null && onAction != null)
+            TextButton(
+              style: TextButton.styleFrom(
+                minimumSize: const Size(48, 48),
+                foregroundColor: AppColors.greenBright,
+              ),
+              onPressed: onAction,
+              child: Text(actionLabel!),
             ),
-          ],
         ],
       ),
     );
   }
 }
 
-class _ListCard extends StatelessWidget {
+class _InfoCard extends StatelessWidget {
   final String title;
   final String subtitle;
-  final Widget trailing;
-  final VoidCallback? onTap;
-
-  const _ListCard({
-    required this.title,
-    required this.subtitle,
-    required this.trailing,
-    this.onTap,
-  });
+  const _InfoCard({required this.title, required this.subtitle});
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.card,
-      shape: RoundedRectangleBorder(
+    return Container(
+      width: double.infinity,
+      padding:
+          const EdgeInsetsDirectional.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.card,
         borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(color: AppColors.border),
+        border: Border.all(color: AppColors.border),
       ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title,
-                        style: const TextStyle(
-                            fontSize: 14.5,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textPrimary)),
-                    const SizedBox(height: 3),
-                    Text(subtitle,
-                        style: const TextStyle(
-                            fontSize: 12, color: AppColors.textSecondary)),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              trailing,
-            ],
-          ),
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title,
+              style: const TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary)),
+          const SizedBox(height: 3),
+          Text(subtitle,
+              style: const TextStyle(
+                  fontSize: 12, color: AppColors.textSecondary)),
+        ],
       ),
     );
   }
-}
-
-class _GreenValue extends StatelessWidget {
-  final String value;
-  const _GreenValue(this.value);
-
-  @override
-  Widget build(BuildContext context) => Text(value,
-      style: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-          color: AppColors.greenBright));
 }
 
 /// Chevron that points in the reading direction (mirrors in RTL).

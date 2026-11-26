@@ -131,7 +131,7 @@ export class VerificationService {
     }
 
     const assessment = await agent.assess(buildAgentInput(subject, type, loaded));
-    const outcome = decideOutcome(assessment.score, thresholds); // throws on an invalid score: technical failure
+    const outcome = decideOutcome(assessment.score, thresholds, assessment.reasonCodes); // throws on an invalid score: technical failure
     const decided = await activities.decide(new Types.ObjectId(activityId), outcome.status, outcome.reasonCode);
     // Only the winning write audits and continues (FR-015, FR-028, FR-054).
     if (!decided) return null;

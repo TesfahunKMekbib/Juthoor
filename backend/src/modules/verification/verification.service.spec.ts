@@ -181,7 +181,16 @@ function setup(opts: { agent?: { assess: (i: unknown) => Promise<AgentAssessment
       activities,
       types: { findById: () => Promise.resolve(type as never) },
       photos,
-      agent: opts.agent ?? new VerificationAgent(model, preparer, agentConfig),
+      agent:
+        opts.agent ??
+        new VerificationAgent(
+          model,
+          preparer,
+          agentConfig,
+          Date.now,
+          () => Promise.resolve(),
+          () => 0,
+        ),
       audit,
       store,
       thresholds: { accept: 0.7, reject: 0.3 },
@@ -253,7 +262,7 @@ describe('VerificationService', () => {
       action: 'verification.decision',
       recordId: id,
       outcome: 'accepted',
-      ruleVersion: 'rules-2',
+      ruleVersion: 'rules-3',
       promptVersion: expect.any(String),
       modelVersion: 'mock-1',
     });
@@ -279,6 +288,18 @@ describe('VerificationService', () => {
       resultReasonCode: 'verification.evidenceUnrelated',
     });
     expect(s2.published.some((p) => p.name === 'ActivityAccepted')).toBe(false);
+  });
+
+  it('stores the specific reason code derived from the aggregate reason codes (FR-027)', async () => {
+    const s = setup({
+      agent: { assess: () => Promise.resolve({ ...assessment(0.2), reasonCodes: ['evidence.hardFlag'] }) },
+    });
+    const id = await s.addActivity();
+    await s.svc.onSubmitted(id);
+    expect(s.activityModel.docs.get(id)).toMatchObject({
+      status: 'rejected',
+      resultReasonCode: 'verification.suspectedManipulation',
+    });
   });
 
   it('writes one audit entry per flag with ai.<flag> codes, IDs and codes only (ADR-0008)', async () => {

@@ -8,11 +8,16 @@ describe('seed:dev (FR-007, FR-011, Q-A4b, Q-E5)', () => {
       expect(seedRefusal({ NODE_ENV: env })).toMatch(/NODE_ENV=development/);
   });
 
-  it('seeds only the six FR-007 categories, never Transport or Other (Q-A4b)', () => {
+  it('seeds the six FR-007 categories plus OTHER, never Transport (Q-A4b, CR-001)', () => {
     expect(SEED_ACTIVITY_TYPES.map((t) => t.category).sort()).toEqual(
-      ['cleanup', 'energy', 'planting', 'recycling', 'waste', 'water'].sort(),
+      ['cleanup', 'energy', 'other', 'planting', 'recycling', 'waste', 'water'].sort(),
     );
-    expect(JSON.stringify(SEED_ACTIVITY_TYPES)).not.toMatch(/transport|"other"/i);
+    expect(JSON.stringify(SEED_ACTIVITY_TYPES)).not.toMatch(/transport/i);
+    const o = SEED_ACTIVITY_TYPES.find((t) => t.code === 'OTHER')!;
+    expect(o.amount).toMatchObject({ optional: true, unit: 'items', min: 0.01, max: 100000 });
+    expect(o.amount.units).toEqual(['items', 'kg', 'bags', 'liters', 'kWh', 'm2', 'other']);
+    expect(o.formFields[0]).toMatchObject({ key: 'activityName', required: true, maxLength: 60 });
+    expect(o.photoRules).toMatchObject({ minPhotos: 1, maxPhotos: 6, neededKinds: ['photo'] });
   });
 
   it('carries the FR-011 fields per category', () => {

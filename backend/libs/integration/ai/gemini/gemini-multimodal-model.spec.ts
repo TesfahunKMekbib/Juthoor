@@ -83,9 +83,15 @@ describe('GeminiMultimodalModel contract (NFR-023, AC 33)', () => {
     expect(err).toMatchObject({ kind: 'unavailable', retryable: true });
   });
 
-  it.each([400, 401, 403])('maps HTTP %i to a non-retryable auth error without the key', async (status) => {
+  it.each([
+    [401, 'provider.auth'],
+    [403, 'provider.auth'],
+    [404, 'provider.modelNotFound'],
+    [400, 'provider.badRequest'],
+    [422, 'provider.http.422'],
+  ])('maps HTTP %i to a non-retryable configuration error %s without the key', async (status, code) => {
     const err = (await failure(model(() => Promise.resolve(jsonResponse({}, status))))) as ModelError;
-    expect(err).toMatchObject({ kind: 'refused', code: 'provider.auth', retryable: false });
+    expect(err).toMatchObject({ kind: 'refused', code, retryable: false });
     expect(err.message).not.toContain(KEY);
   });
 

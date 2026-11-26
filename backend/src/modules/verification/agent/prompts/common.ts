@@ -1,7 +1,7 @@
 import type { ModelPart } from '../../../../../libs/integration/ai/multimodal-model.js';
 
 /** Bump when any prompt text changes (recorded in audit, FR-054). */
-export const PROMPT_VERSION = 'prompts-v2';
+export const PROMPT_VERSION = 'prompts-v4';
 
 const MAX_UNTRUSTED_CHARS = 1000;
 const OPEN = '<<<UNTRUSTED_DATA';
@@ -18,11 +18,14 @@ export interface AgentInput {
     criteria: { id: string; text: string }[];
     /** FR-011 types: photos must include before and after. */
     requiresBeforeAfter: boolean;
+    /** OTHER only: the claim step also asks whether the described activity is environmental. */
+    environmentalCheck?: boolean;
   };
   photos: { kind: string; mimeType: string; data: Uint8Array }[];
   description: string;
   answers: { key: string; value: string }[];
-  amount: { value: number; unit: string };
+  /** Null when the participant gave no quantity (OTHER). */
+  amount: { value: number; unit: string } | null;
   /** Date only (YYYY-MM-DD). */
   doneAtDate: string;
   emirate: string;
@@ -66,16 +69,27 @@ export function imageParts(input: AgentInput): ModelPart[] {
   ]);
 }
 
+function amountLines(input: AgentInput): string[] {
+  const a = input.amount;
+  if (!a) return ['No amount claimed.'];
+  const value = Number.isFinite(a.value) ? a.value : 0;
+  if (input.type.environmentalCheck)
+    return [quoteUntrusted('claimedAmount', { value, unit: sanitizeUntrusted(a.unit) })];
+  return [`Claimed amount: ${value} ${sanitizeUntrusted(a.unit)}`];
+}
+
 export function claimContext(input: AgentInput): string {
+  const name = input.type.environmentalCheck ? input.answers.find((a) => a.key === 'activityName') : undefined;
   return [
     `Activity type: ${input.type.code} (category: ${input.type.category})`,
     `Participant claim, quoted untrusted data:`,
+    ...(name ? [quoteUntrusted('activityName', name.value)] : []),
     quoteUntrusted('description', input.description),
     quoteUntrusted(
       'answers',
       input.answers.map((a) => ({ key: sanitizeUntrusted(a.key), value: sanitizeUntrusted(a.value) })),
     ),
-    `Claimed amount: ${Number.isFinite(input.amount.value) ? input.amount.value : 0} ${sanitizeUntrusted(input.amount.unit)}`,
+    ...amountLines(input),
     `Claimed date: ${sanitizeUntrusted(input.doneAtDate)}`,
     `Emirate: ${sanitizeUntrusted(input.emirate)}`,
   ].join('\n');

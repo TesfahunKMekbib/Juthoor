@@ -33,10 +33,24 @@ Decision: implement only the FR-007 categories; Transport and Other are flagged,
 FR-007 lists six categories (no transport). Flutter UI and prototype add Transport and Other.
 
 ### Q-A4b — Add Transport and Other categories via a requirements change?
-Status: open (stakeholders) · Interim UI decision (owner, 2026-11-25): Transport/Other chips hidden until decided · Blocks: Flutter category chips reconciliation, any seed data beyond FR-007 · Owner: stakeholders
+Status: **partially decided** — Other approved for implementation by the owner 2026-11-26 (CR-001,
+`docs/requirements-change-requests/CR-001-other-activity.md`, pending stakeholder sign-off); Transport still deferred
+(chip stays hidden, no seed) · Owner: stakeholders (requirement text), project owner (implementation)
 Transport and Other are stakeholder-approved and present in the Flutter UI, but absent from FR-007.
 Question for stakeholders: amend FR-007 (and FR-011 category-specific fields) to add them, or remove
 them from the UI? Until decided, backend seed data contains only the FR-007 categories.
+Update 2026-11-26: Other is seeded and shown (`docs/features/other-activity/`); Transport unchanged.
+
+### Q-A4c — Meaning of the `other` unit for Other activities
+Status: open · Blocks: nothing (seeded as unit code `other`, range 0.01–100000) · Owner: project owner
+The owner asked for "an Other unit option" while free-text units are excluded (keeps FR-018 deterministic). The value
+then has no stated unit; the description must explain it. Confirm this, and whether per-unit ranges should differ
+from the single 0.01–100000 range now seeded.
+
+### Q-A4d — Impact method and points for Other activities
+Status: open · Blocks: nothing this phase (Impact/Rewards out of scope) · Owner: stakeholders
+CR-001: no calculation method for Other → no impact credit (FR-043–045). Later: should any Other unit (e.g. kg, kWh)
+map to an impact method, and do Accepted Other activities earn points (FR-009 points-award rules)?
 
 ### Q-A5 — Manual review
 Status: decided · Owner: team

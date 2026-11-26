@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:juthoor/l10n/app_localizations_ar.dart';
+import 'package:juthoor/l10n/app_localizations_en.dart';
 import 'package:juthoor/models/activity_models.dart';
+import 'package:juthoor/services/error_messages.dart';
 import 'package:juthoor/screens/activity_status_screen.dart';
 import 'package:juthoor/screens/my_activities_screen.dart';
 
@@ -104,6 +107,47 @@ void main() {
       });
     }
   }
+
+  const newCodes = [
+    'verification.suspectedManipulation',
+    'verification.unrelatedScene',
+    'verification.beforeAfterInconsistent',
+    'verification.descriptionMismatch',
+    'verification.amountImplausible',
+    'verification.dateImplausible',
+    'verification.criteriaUnmet',
+    'verification.lowRelevance',
+    'verification.lowConfidence',
+  ];
+  for (final code in newCodes) {
+    for (final status in [
+      ActivityStatus.rejected,
+      ActivityStatus.returnedForCorrection
+    ]) {
+      for (final ar in [false, true]) {
+        testWidgets(
+            'shows $code for ${status.name} in ${ar ? 'ar' : 'en'} (FR-027)',
+            (tester) async {
+          await _open(tester, status,
+              reason: code, locale: Locale(ar ? 'ar' : 'en'));
+          final l10n = ar ? AppLocalizationsAr() : AppLocalizationsEn();
+          expect(find.text(messageForCode(l10n, code)), findsOneWidget);
+          expect(messageForCode(l10n, code), isNot(l10n.reasonGeneric));
+          expect(find.text(l10n.reasonGeneric), findsNothing);
+          expect(find.textContaining('verification.'), findsNothing);
+          await _unmount(tester);
+        });
+      }
+    }
+  }
+
+  testWidgets('accepted shows no reason text (FR-027)', (tester) async {
+    await _open(tester, ActivityStatus.accepted);
+    expect(find.text('No further detail is available for this result.'),
+        findsNothing);
+    expect(find.textContaining('photo'), findsNothing);
+    await _unmount(tester);
+  });
 
   testWidgets('unknown reason code shows generic text (NFR-016)',
       (tester) async {

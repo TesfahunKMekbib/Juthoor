@@ -75,7 +75,7 @@ class _MyActivitiesScreenState extends State<MyActivitiesScreen> {
           separatorBuilder: (_, __) => const SizedBox(height: 10),
           itemBuilder: (context, i) {
             final a = items![i];
-            final name = a.activityType.name.of(locale);
+            final name = a.displayName(locale);
             final status = statusLabel(l10n, a.status);
             final date = a.submittedAt == null
                 ? ''
