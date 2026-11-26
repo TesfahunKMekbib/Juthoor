@@ -124,8 +124,12 @@ export class GeminiMultimodalModel implements MultimodalModel {
   private assertStatus(status: number): void {
     if (status >= 200 && status < 300) return;
     if (status === 429 || status >= 500) throw new ModelError('unavailable', undefined, `provider.http.${status}`);
-    // 400/401/403 and other 4xx: configuration or credential problem, not transient.
-    throw new ModelError('refused', undefined, 'provider.auth');
+    // Other 4xx: configuration problems, not transient (not retried). Distinct codes so operators can tell a bad
+    // key from a retired/unknown AI_MODEL (Gemini answers 404) or a malformed request.
+    if (status === 401 || status === 403) throw new ModelError('refused', undefined, 'provider.auth');
+    if (status === 404) throw new ModelError('refused', undefined, 'provider.modelNotFound');
+    if (status === 400) throw new ModelError('refused', undefined, 'provider.badRequest');
+    throw new ModelError('refused', undefined, `provider.http.${status}`);
   }
 
   private interpret(payload: GeminiResponse): GenerateResult {
