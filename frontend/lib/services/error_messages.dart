@@ -8,6 +8,9 @@ String unitLabel(AppLocalizations l10n, String unit) => switch (unit) {
       'liters' => l10n.unitLiters,
       'kWh' => l10n.unitKwh,
       'bags' => l10n.unitBags,
+      'items' => l10n.unitItems,
+      'm2' => l10n.unitM2,
+      'other' => l10n.unitOther,
       _ => unit,
     };
 
@@ -52,6 +55,8 @@ final Map<String, _Builder> _messages = {
         _num(p['max']),
         unitLabel(l, (p['unit'] as String?) ?? ''),
       ),
+  'amount.unitRequired': (l, p) => l.errAmountUnitRequired,
+  'amount.unitInvalid': (l, p) => l.errAmountUnitInvalid,
   'photos.tooFew': (l, p) => l.errPhotosTooFew,
   'photos.tooMany': (l, p) => l.errPhotosTooMany,
   'photos.kindMissing': (l, p) => l.errPhotosKindMissing,
@@ -62,6 +67,17 @@ final Map<String, _Builder> _messages = {
   // Status reason codes (FR-027, FR-028)
   'verification.evidenceUnclear': (l, p) => l.reasonEvidenceUnclear,
   'verification.evidenceUnrelated': (l, p) => l.reasonEvidenceUnrelated,
+  'verification.suspectedManipulation': (l, p) => l.reasonSuspectedManipulation,
+  'verification.unrelatedScene': (l, p) => l.reasonUnrelatedScene,
+  'verification.beforeAfterInconsistent': (l, p) =>
+      l.reasonBeforeAfterInconsistent,
+  'verification.descriptionMismatch': (l, p) => l.reasonDescriptionMismatch,
+  'verification.amountImplausible': (l, p) => l.reasonAmountImplausible,
+  'verification.dateImplausible': (l, p) => l.reasonDateImplausible,
+  'verification.criteriaUnmet': (l, p) => l.reasonCriteriaUnmet,
+  'verification.lowRelevance': (l, p) => l.reasonLowRelevance,
+  'verification.lowConfidence': (l, p) => l.reasonLowConfidence,
+  'verification.notEnvironmental': (l, p) => l.reasonNotEnvironmental,
   'processing.retrying': (l, p) => l.reasonRetrying,
   'processing.failedPermanently': (l, p) => l.reasonFailedPermanently,
 };

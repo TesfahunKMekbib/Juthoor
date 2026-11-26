@@ -68,7 +68,14 @@ const ok = (json: unknown): ScriptEntry => ({ json });
 function setup(script: Record<string, ScriptEntry[]>, over: Partial<AgentConfig> = {}, now: () => number = () => 0) {
   const mock = new MockMultimodalModel({ mode: 'scripted', script });
   const prep = preparer();
-  const agent = new VerificationAgent(mock, prep, { ...config, ...over }, now);
+  const agent = new VerificationAgent(
+    mock,
+    prep,
+    { ...config, ...over },
+    now,
+    () => Promise.resolve(),
+    () => 0.5,
+  );
   return { mock, prep, agent };
 }
 const tags = (m: MockMultimodalModel): string[] => m.calls.map((c) => c.requestTag);
@@ -83,7 +90,7 @@ describe('VerificationAgent (FR-025, FR-026, FR-028, AC 25-31)', () => {
     expect(decideOutcome(r.score, { accept: 0.7, reject: 0.3 })).toBeDefined();
     expect(r.modelVersions).toEqual(['mock-1']);
     expect(r.steps.map((s) => s.step)).toEqual(['evidence', 'claim']);
-    expect(r.promptVersion).toBe('prompts-v3');
+    expect(r.promptVersion).toBe('prompts-v4');
     expect(r.providerId).toBe('mock');
     expect(r.findings.followup).toBeUndefined();
   });

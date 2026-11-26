@@ -181,7 +181,16 @@ function setup(opts: { agent?: { assess: (i: unknown) => Promise<AgentAssessment
       activities,
       types: { findById: () => Promise.resolve(type as never) },
       photos,
-      agent: opts.agent ?? new VerificationAgent(model, preparer, agentConfig),
+      agent:
+        opts.agent ??
+        new VerificationAgent(
+          model,
+          preparer,
+          agentConfig,
+          Date.now,
+          () => Promise.resolve(),
+          () => 0,
+        ),
       audit,
       store,
       thresholds: { accept: 0.7, reject: 0.3 },
@@ -253,7 +262,7 @@ describe('VerificationService', () => {
       action: 'verification.decision',
       recordId: id,
       outcome: 'accepted',
-      ruleVersion: 'rules-2',
+      ruleVersion: 'rules-3',
       promptVersion: expect.any(String),
       modelVersion: 'mock-1',
     });

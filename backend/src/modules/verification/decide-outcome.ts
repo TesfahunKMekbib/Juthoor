@@ -21,6 +21,7 @@ export interface Outcome {
 const REASON_PRIORITY: readonly (readonly [string, string])[] = [
   ['evidence.hardFlag', 'verification.suspectedManipulation'],
   ['evidence.unrelatedScene', 'verification.unrelatedScene'],
+  ['claim.notEnvironmental', 'verification.notEnvironmental'],
   ['claim.beforeAfterInconsistent', 'verification.beforeAfterInconsistent'],
   ['claim.descriptionMismatch', 'verification.descriptionMismatch'],
   ['claim.amountImplausible', 'verification.amountImplausible'],

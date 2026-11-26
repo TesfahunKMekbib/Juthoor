@@ -2,11 +2,21 @@ import type { ImagePreparer } from '../../../../libs/integration/ai/image-prep.j
 import {
   ModelError,
   type AgentStep,
+  type GenerateRequest,
+  type GenerateResult,
   type MultimodalModel,
   type RequestTag,
 } from '../../../../libs/integration/ai/multimodal-model.js';
 import { AGGREGATION_VERSION, aggregate, followupTrigger } from './aggregate.js';
-import { recordCall, requestCall, startBudget, type BudgetConfig, type BudgetState, type CallKind } from './budget.js';
+import {
+  recordCall,
+  remainingMs,
+  requestCall,
+  startBudget,
+  type BudgetConfig,
+  type BudgetState,
+  type CallKind,
+} from './budget.js';
 import {
   parseClaim,
   parseEvidence,
@@ -26,6 +36,10 @@ import {
   type AgentInput,
   type StepPrompt,
 } from './prompts/index.js';
+
+const TRANSIENT_RETRIES = 2;
+const BACKOFF_MIN_MS = 800;
+const BACKOFF_MAX_MS = 1600;
 
 export interface AgentConfig extends BudgetConfig {
   followupBelow: number;
@@ -85,7 +99,32 @@ export class VerificationAgent {
     private readonly imagePreparer: ImagePreparer,
     private readonly config: AgentConfig,
     private readonly now: () => number = Date.now,
+    private readonly sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    private readonly random: () => number = Math.random,
   ) {}
+
+  /**
+   * Calls the model; a transient failure (ModelError 'unavailable': 429/5xx/network) is retried up to
+   * TRANSIENT_RETRIES times after a jittered backoff, only while the attempt budget can still afford a call
+   * (NFR-002). Each retry counts as a call; timeout, refused and invalid output are never retried here.
+   */
+  private async generateWithRetry(run: RunState, request: GenerateRequest): Promise<GenerateResult> {
+    let req = request;
+    for (let retry = 0; ; retry++) {
+      try {
+        return await this.model.generate(req);
+      } catch (err) {
+        if (!(err instanceof ModelError) || err.kind !== 'unavailable' || retry >= TRANSIENT_RETRIES) throw err;
+        const backoff = BACKOFF_MIN_MS + this.random() * (BACKOFF_MAX_MS - BACKOFF_MIN_MS);
+        if (remainingMs(this.config, run.budget, this.now()) < this.config.minCallMs + backoff) throw err;
+        await this.sleep(backoff);
+        const next = requestCall(this.config, run.budget, this.now(), 'optional');
+        if (!next.allowed) throw err;
+        run.budget = recordCall(run.budget);
+        req = { ...request, timeoutMs: next.timeoutMs };
+      }
+    }
+  }
 
   async assess(rawInput: AgentInput): Promise<AgentAssessment> {
     const input = await this.prepareImages(rawInput);
@@ -99,7 +138,9 @@ export class VerificationAgent {
     const evidence = await this.runStep(run, 'evidence', 'required', buildEvidencePrompt(input), (json) =>
       parseEvidence(json, input.photos.length, criteriaIds),
     );
-    const claim = await this.runStep(run, 'claim', 'required', buildClaimPrompt(input), parseClaim);
+    const claim = await this.runStep(run, 'claim', 'required', buildClaimPrompt(input), (json) =>
+      parseClaim(json, input.type.environmentalCheck === true),
+    );
 
     let followup: FollowupFindings | undefined;
     const decision = followupTrigger(evidence, claim, this.config.followupBelow);
@@ -167,7 +208,7 @@ export class VerificationAgent {
       const tag: RequestTag = repair ? `${step}.repair` : step;
       let json: unknown;
       try {
-        const reply = await this.model.generate({
+        const reply = await this.generateWithRetry(run, {
           requestTag: tag,
           system: prompt.system,
           parts: repair ? buildRepairParts(prompt, errors) : prompt.parts,

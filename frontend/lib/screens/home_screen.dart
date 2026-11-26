@@ -308,7 +308,7 @@ class _ActivityRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final name = activity.activityType.name.of(locale);
+    final name = activity.displayName(locale);
     final status = statusLabel(l10n, activity.status);
     final date = activity.submittedAt == null
         ? ''

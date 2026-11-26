@@ -79,7 +79,7 @@ export class Activity {
   @Prop({ type: Date, required: true }) doneAt!: Date; // when it happened
   @Prop({ type: SchemaFactory.createForClass(EncryptedLocation), required: true }) locationEnc!: EncryptedLocation;
   @Prop({ type: MongooseSchema.Types.Mixed, default: {} }) answers!: Record<string, string | number>;
-  @Prop({ type: SchemaFactory.createForClass(ActivityAmount), required: true }) amount!: ActivityAmount;
+  @Prop({ type: SchemaFactory.createForClass(ActivityAmount), default: null }) amount?: ActivityAmount | null; // null/absent: OTHER without a quantity
   @Prop({ type: [SchemaFactory.createForClass(ActivityPhoto)], default: [] }) photos!: ActivityPhoto[];
   @Prop({ type: String, required: true, enum: ACTIVITY_STATUSES, default: 'submitted' }) status!: ActivityStatus;
   @Prop({ type: String, default: null }) resultReasonCode!: string | null; // status reason code; the app renders the text

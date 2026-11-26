@@ -2,7 +2,7 @@ import type { AgentStep, ResponseSchema } from '../../../../libs/integration/ai/
 import { validateAgainstSchema } from './schema-validator.js';
 
 /** Bump when a response schema changes (recorded in audit, FR-054). */
-export const SCHEMA_VERSION = 'schema-v2';
+export const SCHEMA_VERSION = 'schema-v3';
 
 export const PHOTO_FLAGS = [
   'screenshot',
@@ -35,6 +35,8 @@ export interface ClaimFindings {
   beforeAfter: Verdict | 'n_a';
   descriptionMatches: Verdict;
   dateContext: Verdict;
+  /** OTHER only: is the described activity plausibly environmental. `n_a` for every other type. */
+  environmental?: Verdict | 'n_a';
   confidence: number;
 }
 
@@ -76,15 +78,23 @@ export function evidenceSchema(photoCount: number, criteriaIds: readonly string[
   };
 }
 
-export function claimSchema(): ResponseSchema {
+export function claimSchema(environmentalCheck = false): ResponseSchema {
   return {
     type: 'object',
-    required: ['amountPlausible', 'beforeAfter', 'descriptionMatches', 'dateContext', 'confidence'],
+    required: [
+      'amountPlausible',
+      'beforeAfter',
+      'descriptionMatches',
+      'dateContext',
+      ...(environmentalCheck ? ['environmental'] : []),
+      'confidence',
+    ],
     properties: {
       amountPlausible: verdict,
       beforeAfter: { type: 'string', enum: [...VERDICTS, 'n_a'] },
       descriptionMatches: verdict,
       dateContext: verdict,
+      environmental: { type: 'string', enum: environmentalCheck ? VERDICTS : ['n_a'] },
       confidence: unit,
     },
   };
@@ -126,9 +136,11 @@ export function parseEvidence(
   return { ok: true, value };
 }
 
-export function parseClaim(json: unknown): ParseResult<ClaimFindings> {
-  const checked = validateAgainstSchema(claimSchema(), json);
-  return checked.ok ? { ok: true, value: checked.value as ClaimFindings } : checked;
+export function parseClaim(json: unknown, environmentalCheck = false): ParseResult<ClaimFindings> {
+  const checked = validateAgainstSchema(claimSchema(environmentalCheck), json);
+  if (!checked.ok) return checked;
+  const value = checked.value as ClaimFindings;
+  return { ok: true, value: { ...value, environmental: value.environmental ?? 'n_a' } };
 }
 
 /** Rejects issues that were not asked and duplicate answers for the same issue. */
@@ -150,12 +162,13 @@ export function schemaFor(
   photoCount: number,
   criteriaIds: readonly string[],
   issues: readonly IssueCode[] = ISSUE_CODES,
+  environmentalCheck = false,
 ): ResponseSchema {
   switch (step) {
     case 'evidence':
       return evidenceSchema(photoCount, criteriaIds);
     case 'claim':
-      return claimSchema();
+      return claimSchema(environmentalCheck);
     case 'followup':
       return followupSchema(issues);
   }

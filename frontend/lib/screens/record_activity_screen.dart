@@ -26,6 +26,7 @@ String categoryLabel(AppLocalizations l10n, String id) => switch (id) {
       'water' => l10n.categoryWater,
       'energy' => l10n.categoryEnergy,
       'cleanup' => l10n.categoryCleanup,
+      'other' => l10n.categoryOther,
       _ => id,
     };
 
@@ -269,6 +270,7 @@ class _RecordActivityScreenState extends State<RecordActivityScreen> {
       input = TextField(
         key: ValueKey('field-answer-${f.key}'),
         controller: ctl,
+        maxLength: f.key == 'activityName' ? 60 : null,
         keyboardType: f.type == 'number'
             ? const TextInputType.numberWithOptions(decimal: true)
             : TextInputType.text,
@@ -289,7 +291,48 @@ class _RecordActivityScreenState extends State<RecordActivityScreen> {
     );
   }
 
+  Widget buildOptionalAmount(AppLocalizations l10n) {
+    final rule = c.type!.amount;
+    String n(num v) => v == v.roundToDouble() ? '${v.toInt()}' : '$v';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        sectionLabel(l10n.amountOptionalLabel),
+        TextField(
+          key: const ValueKey('field-amount'),
+          controller: amount,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: fieldDecoration(),
+          onChanged: c.setAmount,
+        ),
+        Padding(
+          padding: const EdgeInsetsDirectional.only(top: 4),
+          child: Text(
+            l10n.amountRangeHint(n(rule.min), n(rule.max), ''),
+            style: const TextStyle(color: _mutedText, fontSize: 12),
+          ),
+        ),
+        const SizedBox(height: 10),
+        sectionLabel(l10n.unitFieldLabel),
+        DropdownButtonFormField<String>(
+          key: ValueKey('unit-${c.type?.id}-${c.amountUnit}'),
+          initialValue: rule.units.contains(c.amountUnit) ? c.amountUnit : null,
+          isExpanded: true,
+          dropdownColor: _cardColor,
+          decoration: fieldDecoration(),
+          items: [
+            for (final u in rule.units)
+              DropdownMenuItem(value: u, child: Text(unitLabel(l10n, u))),
+          ],
+          onChanged: c.setAmountUnit,
+        ),
+        errorsText(c.errorsFor('amount')),
+      ],
+    );
+  }
+
   Widget buildAmount(AppLocalizations l10n) {
+    if (c.type!.amount.optional) return buildOptionalAmount(l10n);
     final rule = c.type!.amount;
     final unit = unitLabel(l10n, rule.unit);
     String n(num v) => v == v.roundToDouble() ? '${v.toInt()}' : '$v';

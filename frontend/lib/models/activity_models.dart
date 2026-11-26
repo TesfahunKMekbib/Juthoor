@@ -47,12 +47,25 @@ class AmountRule {
   final String unit;
   final num min;
   final num max;
-  const AmountRule({required this.unit, required this.min, required this.max});
+
+  /// True when the quantity may be left out and the unit is chosen from
+  /// [units] (the "Other" type).
+  final bool optional;
+  final List<String> units;
+  const AmountRule({
+    this.unit = '',
+    required this.min,
+    required this.max,
+    this.optional = false,
+    this.units = const [],
+  });
 
   factory AmountRule.fromJson(Map<String, dynamic> j) => AmountRule(
-        unit: j['unit'] as String,
+        unit: (j['unit'] as String?) ?? '',
         min: j['min'] as num,
         max: j['max'] as num,
+        optional: (j['optional'] as bool?) ?? false,
+        units: ((j['units'] as List?) ?? const []).cast<String>(),
       );
 }
 
@@ -243,6 +256,22 @@ class ActivityView {
     this.updatedAt,
   });
 
+  /// Custom name of an "Other" activity, when present.
+  String? get customName {
+    if (activityType.code != 'OTHER') return null;
+    for (final a in answers) {
+      final v = a.value;
+      if (a.key == 'activityName' && v is String && v.trim().isNotEmpty) {
+        return v.trim();
+      }
+    }
+    return null;
+  }
+
+  /// Name shown in lists: the custom name for "Other", else the type name.
+  String displayName(Locale locale) =>
+      customName ?? activityType.name.of(locale);
+
   factory ActivityView.fromJson(Map<String, dynamic> j) {
     final loc = j['location'] as Map<String, dynamic>?;
     DateTime? date(Object? v) => v is String ? DateTime.tryParse(v) : null;
@@ -330,7 +359,8 @@ class SubmissionRequest {
   final DateTime doneAt;
   final LocationInput location;
   final Map<String, Object> answers;
-  final num amount;
+  final num? amount;
+  final String? amountUnit; // sent only with an optional-amount quantity
   final List<PhotoUpload> photos; // order = photoKinds
 
   const SubmissionRequest({
@@ -340,6 +370,7 @@ class SubmissionRequest {
     required this.location,
     required this.answers,
     required this.amount,
+    this.amountUnit,
     required this.photos,
   });
 
@@ -349,7 +380,11 @@ class SubmissionRequest {
         'doneAt': isoWithOffset(doneAt),
         'location': location.toJson(),
         'answers': answers,
-        'amount': {'value': amount},
+        if (amount != null)
+          'amount': {
+            'value': amount,
+            if (amountUnit != null) 'unit': amountUnit,
+          },
         'photoKinds': photos.map((p) => p.kind).toList(),
       };
 }

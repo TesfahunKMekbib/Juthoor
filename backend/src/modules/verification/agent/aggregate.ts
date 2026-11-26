@@ -1,7 +1,7 @@
 import type { ClaimFindings, EvidenceFindings, FollowupFindings, IssueCode, PhotoFlag, Verdict } from './findings.js';
 
 /** Bump when any weight, cap or rule below changes (recorded in audit, FR-054). Calibrate with the real provider (Q-C3). */
-export const AGGREGATION_VERSION = 'agg-v3';
+export const AGGREGATION_VERSION = 'agg-v4';
 
 /** Flags that always cap the score below the default accept threshold (ADR-0012 section 3). */
 export const HARD_FLAGS: readonly PhotoFlag[] = [
@@ -21,7 +21,7 @@ const CLAIM_UNCLEAR_FACTOR = 0.9;
 /** Share of the score an entirely unmet criteria list removes (one unmet of one halves it). */
 const CRITERIA_UNMET_WEIGHT = 0.5;
 /** For these claim fields the photos often cannot show the answer, so "unclear" is neutral. */
-const UNCLEAR_IS_NEUTRAL: ReadonlySet<string> = new Set(['amount', 'date']);
+const UNCLEAR_IS_NEUTRAL: ReadonlySet<string> = new Set(['amount', 'date', 'environmental']);
 const FOLLOWUP_NO_CEIL = 0.25;
 const SEVERITY: Record<Verdict, number> = { yes: 0, unclear: 1, no: 2 };
 const CONFLICT_HIGH = 0.7;
@@ -50,7 +50,7 @@ const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
 
 interface Effective {
   relevance: number;
-  claim: Record<'amount' | 'beforeAfter' | 'description' | 'date', Verdict | 'n_a'>;
+  claim: Record<'amount' | 'beforeAfter' | 'description' | 'date' | 'environmental', Verdict | 'n_a'>;
   confidence: number;
 }
 
@@ -80,6 +80,7 @@ function resolve(input: AggregateInput): Effective {
     beforeAfter: claim.beforeAfter,
     description: claim.descriptionMatches,
     date: claim.dateContext,
+    environmental: claim.environmental ?? 'n_a',
   };
   let confidence = Math.min(evidence.confidence, claim.confidence);
   if (followup) {
@@ -120,6 +121,8 @@ function aggregateOnce(input: AggregateInput): AggregateResult {
   if (input.criteriaCount > 0 && unmet > 0) {
     score *= clamp01(1 - CRITERIA_UNMET_WEIGHT * (unmet / input.criteriaCount));
     reasonCodes.push('evidence.criteriaUnmet');
+    // Half or more of the criteria unmet can never be accepted, whatever the photo relevance says.
+    if (unmet / input.criteriaCount >= 0.5) score = Math.min(score, LOW_CONFIDENCE_CAP);
   }
 
   const claimCodes: Record<keyof Effective['claim'], string> = {
@@ -127,6 +130,7 @@ function aggregateOnce(input: AggregateInput): AggregateResult {
     beforeAfter: 'claim.beforeAfterInconsistent',
     description: 'claim.descriptionMismatch',
     date: 'claim.dateImplausible',
+    environmental: 'claim.notEnvironmental',
   };
   for (const key of Object.keys(eff.claim) as (keyof Effective['claim'])[]) {
     const v = eff.claim[key];

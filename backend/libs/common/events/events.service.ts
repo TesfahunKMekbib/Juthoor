@@ -10,7 +10,7 @@ export interface ActivitySubmittedEvent extends BaseEvent {
   userId: string;
   activityTypeCode: string;
   category: string;
-  amount: { value: number; unit: string };
+  amount: { value: number; unit: string } | null;
   emirate: string;
   doneAt: Date;
 }
@@ -28,7 +28,7 @@ export interface ActivityAcceptedEvent extends BaseEvent {
   userId: string;
   activityTypeCode: string;
   category: string;
-  amount: { value: number; unit: string };
+  amount: { value: number; unit: string } | null;
   doneAt: Date;
 }
 

@@ -23,6 +23,10 @@ export interface MockOptions {
 export const MOCK_PROVIDER_ID = 'mock';
 export const MOCK_MODEL_VERSION = 'mock-1';
 
+/** OTHER only: its claim schema lets `environmental` be a real verdict. */
+const asksEnvironmental = (request: GenerateRequest): boolean =>
+  JSON.stringify(request.responseSchema).includes('"environmental":{"type":"string","enum":["yes"');
+
 /** Deterministic, offline model for tests and the demo (ADR-0012 section 8). Records tags only, never content. */
 export class MockMultimodalModel implements MultimodalModel {
   readonly calls: { requestTag: string; imageCount: number }[] = [];
@@ -54,12 +58,12 @@ export class MockMultimodalModel implements MultimodalModel {
       }
       case 'fixed':
         return Promise.resolve(
-          this.result(this.fixedFindings(request.requestTag.split('.')[0] as AgentStep, imageCount)),
+          this.result(this.fixedFindings(request.requestTag.split('.')[0] as AgentStep, imageCount, request)),
         );
     }
   }
 
-  private fixedFindings(step: AgentStep, imageCount: number): unknown {
+  private fixedFindings(step: AgentStep, imageCount: number, request: GenerateRequest): unknown {
     switch (step) {
       case 'evidence':
         return {
@@ -78,6 +82,7 @@ export class MockMultimodalModel implements MultimodalModel {
           beforeAfter: 'n_a',
           descriptionMatches: 'yes',
           dateContext: 'yes',
+          environmental: asksEnvironmental(request) ? 'yes' : 'n_a',
           confidence: 0.95,
         };
       case 'followup':

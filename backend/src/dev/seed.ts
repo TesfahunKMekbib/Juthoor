@@ -26,7 +26,7 @@ const meter = (key: string, en: string, ar: string, unitEn: string) => ({
 });
 
 /**
- * The six FR-007 categories with their FR-011 fields. No Transport or Other (Q-A4b). The participant enters the
+ * The six FR-007 categories with their FR-011 fields, plus OTHER (change request CR-001; no impact method, FR-043-045). No Transport (Q-A4b). The participant enters the
  * amount; water and energy additionally require the before/after meter readings as numbers (Q-E5).
  */
 export const SEED_ACTIVITY_TYPES: SeedType[] = [
@@ -133,6 +133,31 @@ export const SEED_ACTIVITY_TYPES: SeedType[] = [
     amount: { unit: 'bags', min: 1, max: 100 },
     photoRules: photoRules(2, 6, ['before', 'after']),
     goodSeasonMonths: [10, 11, 12, 1, 2, 3],
+  },
+  {
+    code: 'OTHER',
+    category: 'other',
+    name: bi('Other activity', 'نشاط آخر'),
+    description: bi('Any other environmental action you describe.', 'أي إجراء بيئي آخر تصفه.'),
+    formFields: [
+      {
+        key: 'activityName',
+        label: bi('Activity name', 'اسم النشاط'),
+        type: 'text',
+        options: [],
+        required: true,
+        maxLength: 60,
+      },
+    ],
+    amount: {
+      optional: true,
+      units: ['items', 'kg', 'bags', 'liters', 'kWh', 'm2', 'other'],
+      unit: 'items',
+      min: 0.01,
+      max: 100000,
+    },
+    photoRules: photoRules(1, 6, ['photo']),
+    goodSeasonMonths: [],
   },
 ];
 

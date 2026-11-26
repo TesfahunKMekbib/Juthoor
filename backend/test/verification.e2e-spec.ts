@@ -190,6 +190,21 @@ describe('phase A: real worker, mock provider (AC 14-18, 24, 25, 30)', () => {
   });
   beforeEach(() => h.model.reset());
 
+  it('decides an OTHER activity with and without a quantity on the mock provider (CR-001)', async () => {
+    const other = await h.conn.collection('activityTypes').findOne({ code: 'OTHER' });
+    const base = { activityTypeId: String(other!._id), answers: { activityName: 'Mangrove seed collection' } };
+    const noQty = await submit(h, { ...base, amount: undefined });
+    const withQty = await submit(h, { ...base, amount: { value: 3, unit: 'bags' } });
+    const a = await finalStatus(h, noQty, DECIDED);
+    const b = await finalStatus(h, withQty, DECIDED);
+    expect(a.status).toBe('accepted');
+    expect(a.amount).toBeNull();
+    expect(a.acceptedAmount).toBeNull();
+    expect(a.answers[0]).toMatchObject({ key: 'activityName', value: 'Mangrove seed collection' });
+    expect(b.status).toBe('accepted');
+    expect(b.acceptedAmount).toEqual({ value: 3, unit: 'bags' });
+  });
+
   it('accepts a high score, audits once with versions and no personal data, publishes Accepted once (FR-026, FR-054, AC 14-18, 24, 30)', async () => {
     const started = Date.now();
     const id = await submit(h);
@@ -378,9 +393,9 @@ describe('phase C: retries exhausted (FR-028, Q-E4, AC 16)', () => {
     expect(a.acceptedAmount).toBeNull();
     const job = (await jobsOf(h, id))[0];
     expect(job).toMatchObject({ state: 'exhausted', attempts: 2, lastErrorCode: 'ai.unavailable' });
-    expect(h.model.calls).toHaveLength(2);
+    expect(h.model.calls).toHaveLength(6); // 2 attempts x (1 call + 2 transient retries)
     await new Promise((r) => setTimeout(r, 350)); // a few sweeps: an exhausted job is not claimed again
-    expect(h.model.calls).toHaveLength(2);
+    expect(h.model.calls).toHaveLength(6);
     expect((await statusOf(h, id)).status).toBe('pending_technical_processing');
     expect(await auditOf(h, id)).toHaveLength(0);
     expect(h.accepted).not.toContain(id);

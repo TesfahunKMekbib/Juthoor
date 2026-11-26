@@ -233,7 +233,7 @@ describe('aggregate (AC 27, 28)', () => {
     expect(agg({ claim: claim({ amountPlausible: 'no' }) }).score).toBe(0.45);
     expect(agg({ claim: claim({ descriptionMatches: 'unclear' }) }).score).toBe(0.81);
     const r = agg({ evidence: evidence({ criteriaUnmet: ['c1', 'c1'] }), criteriaCount: 2 });
-    expect(r.score).toBe(0.675);
+    expect(r.score).toBe(0.65);
     expect(r.reasonCodes).toContain('evidence.criteriaUnmet');
   });
 

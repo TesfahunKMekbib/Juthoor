@@ -36,7 +36,7 @@ describe('checkSubmission', () => {
       description: 'Planted trees',
       location: { source: 'manual', emirate: 'Dubai', area: 'Marina' },
       answers: { count: 3 },
-      amountValue: 5,
+      amount: { value: 5, unit: 'trees' },
       photoKinds: ['photo'],
     });
   });
@@ -180,7 +180,7 @@ describe('checkSubmission', () => {
     });
     it('accepts a numeric string', () => {
       const r = checkSubmission(type, valid({ amount: { value: '7' } }), [photo], NOW);
-      expect(r.clean?.amountValue).toBe(7);
+      expect(r.clean?.amount).toEqual({ value: 7, unit: 'trees' });
     });
   });
 

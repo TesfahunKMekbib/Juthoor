@@ -17,6 +17,7 @@ export class FormField {
   @Prop({ type: String, required: true, enum: ['text', 'number', 'choice'] }) type: 'text' | 'number' | 'choice';
   @Prop({ type: [String], default: [] }) options: string[]; // only for "choice"
   @Prop({ type: Boolean, default: false }) required: boolean;
+  @Prop({ type: Number }) maxLength?: number; // text fields; absent = 200 (OTHER activityName uses 60)
 }
 const FormFieldSchema = SchemaFactory.createForClass(FormField);
 
@@ -26,6 +27,8 @@ export class AmountRule {
   @Prop({ type: String, required: true }) unit: string; // trees | kg | liters | kWh | bags
   @Prop({ type: Number, required: true }) min: number;
   @Prop({ type: Number, required: true }) max: number;
+  @Prop({ type: Boolean, default: false }) optional?: boolean; // OTHER: the quantity may be left out
+  @Prop({ type: [String], default: [] }) units?: string[]; // OTHER: allowed units; empty = the type's `unit`
 }
 const AmountRuleSchema = SchemaFactory.createForClass(AmountRule);
 
@@ -39,7 +42,7 @@ export class PhotoRules {
 }
 const PhotoRulesSchema = SchemaFactory.createForClass(PhotoRules);
 
-export const ACTIVITY_CATEGORIES = ['planting', 'recycling', 'waste', 'water', 'energy', 'cleanup'] as const;
+export const ACTIVITY_CATEGORIES = ['planting', 'recycling', 'waste', 'water', 'energy', 'cleanup', 'other'] as const;
 
 /** A kind of activity people can log, and the rules for it. */
 @Schema({ collection: 'activityTypes', timestamps: true })

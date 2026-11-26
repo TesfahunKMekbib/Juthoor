@@ -7,9 +7,9 @@ import '../services/activity_api.dart';
 import '../services/api_exception.dart';
 import '../services/device_services.dart';
 
-// TODO(Q-A4b): 'Transport' and 'Other' are not approved FR-007 categories and
-// are hidden by owner decision. Only these categories are offered, whatever
-// the API returns. Revisit when Q-A4b is decided.
+// TODO(Q-A4b): 'Transport' is not an approved FR-007 category and is hidden by
+// owner decision. Only these categories are offered, whatever the API returns.
+// 'other' is the free-form "Other" activity type.
 const supportedCategories = [
   'planting',
   'recycling',
@@ -17,6 +17,7 @@ const supportedCategories = [
   'water',
   'energy',
   'cleanup',
+  'other',
 ];
 
 /// The seven emirates the backend accepts (FR-012, FR-020).
@@ -79,6 +80,7 @@ class ActivityFormController extends ChangeNotifier {
   String description = '';
   final Map<String, String> answers = {};
   String amountText = '';
+  String? amountUnit;
   late DateTime doneAt;
   final Map<int, PhotoUpload> photos = {};
   bool manualLocation = false;
@@ -144,6 +146,7 @@ class ActivityFormController extends ChangeNotifier {
     type = t;
     answers.clear();
     amountText = '';
+    amountUnit = null;
     photos.clear();
     errors = const [];
     generalErrorCode = null;
@@ -165,6 +168,12 @@ class ActivityFormController extends ChangeNotifier {
 
   void setAmount(String v) {
     amountText = v;
+    _clearSection('amount');
+    notifyListeners();
+  }
+
+  void setAmountUnit(String? v) {
+    amountUnit = v;
     _clearSection('amount');
     notifyListeners();
   }
@@ -309,6 +318,8 @@ class ActivityFormController extends ChangeNotifier {
       String? code;
       if (v.isEmpty) {
         if (f.required) code = 'answers.required';
+      } else if (f.key == 'activityName' && v.length > 60) {
+        code = 'answers.tooLong';
       } else if (f.type == 'number' && num.tryParse(v) == null) {
         code = 'answers.notNumber';
       } else if (f.type == 'choice' && !f.options.contains(v)) {
@@ -323,7 +334,28 @@ class ActivityFormController extends ChangeNotifier {
       }
     }
     final amount = _parseAmount(amountText);
-    if (amount == null) {
+    if (t.amount.optional) {
+      if (amountText.trim().isNotEmpty) {
+        if (amount == null) {
+          out.add(
+              const FieldError(field: 'amount.value', code: 'amount.required'));
+        } else if (amount < t.amount.min || amount > t.amount.max) {
+          out.add(FieldError(
+            field: 'amount.value',
+            code: 'amount.outOfRange',
+            params: {
+              'min': t.amount.min,
+              'max': t.amount.max,
+              'unit': amountUnit ?? '',
+            },
+          ));
+        }
+        if (amountUnit == null) {
+          out.add(const FieldError(
+              field: 'amount.unit', code: 'amount.unitRequired'));
+        }
+      }
+    } else if (amount == null) {
       out.add(const FieldError(field: 'amount.value', code: 'amount.required'));
     } else if (amount < t.amount.min || amount > t.amount.max) {
       out.add(FieldError(
@@ -402,7 +434,12 @@ class ActivityFormController extends ChangeNotifier {
                   ? num.parse(answers[f.key]!.trim())
                   : answers[f.key]!.trim(),
         },
-        amount: _parseAmount(amountText)!,
+        amount: t.amount.optional && amountText.trim().isEmpty
+            ? null
+            : _parseAmount(amountText)!,
+        amountUnit: t.amount.optional && amountText.trim().isNotEmpty
+            ? amountUnit
+            : null,
         photos: [
           for (var i = 0; i < specs.length; i++)
             if (photos[i] != null) photos[i]!,

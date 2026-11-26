@@ -45,7 +45,7 @@ export interface VerificationSubject {
   description: string;
   doneAt: Date;
   answers: Record<string, string | number>;
-  amount: { value: number; unit: string };
+  amount: { value: number; unit: string } | null;
   photos: { fileId: Types.ObjectId; kind: string; mimeType: string }[];
   emirate: string;
 }
@@ -127,7 +127,7 @@ export class ActivitiesService {
         doneAt: clean.doneAt,
         locationEnc,
         answers: clean.answers,
-        amount: { value: clean.amountValue, unit: type.amount.unit },
+        amount: clean.amount,
         photos: stored.map((p, i) => ({ ...p, kind: clean.photoKinds[i], uploadedAt: now })),
         status: 'submitted',
         submitKey,
@@ -152,7 +152,7 @@ export class ActivitiesService {
       userId,
       activityTypeCode: type.code,
       category: type.category,
-      amount: record.amount,
+      amount: record.amount ?? null,
       emirate,
       doneAt: record.doneAt,
     });
@@ -250,12 +250,13 @@ export class ActivitiesService {
     if (to === 'accepted') {
       const type = await this.types.findById(String(record.activityTypeId)).catch(() => undefined);
       if (type) {
+        // Impact consumers must skip category "other": it has no calculation method (FR-043-045).
         this.events.publish('ActivityAccepted', {
           activityId: id,
           userId,
           activityTypeCode: type.code,
           category: type.category,
-          amount: { value: record.amount.value, unit: record.amount.unit },
+          amount: record.amount ? { value: record.amount.value, unit: record.amount.unit } : null,
           doneAt: record.doneAt,
         });
       } else {
@@ -319,7 +320,7 @@ export class ActivitiesService {
       description: a.description,
       doneAt: a.doneAt,
       answers: a.answers ?? {},
-      amount: { value: a.amount.value, unit: a.amount.unit },
+      amount: a.amount ? { value: a.amount.value, unit: a.amount.unit } : null,
       photos: a.photos.map((p) => ({ fileId: p.fileId, kind: p.kind, mimeType: p.mimeType })),
       emirate: this.decryptLocation(a)?.emirate ?? '',
     };
@@ -378,8 +379,8 @@ export class ActivitiesService {
         label: labels.get(key) ?? { en: key, ar: key },
         value,
       })),
-      amount: { value: a.amount.value, unit: a.amount.unit },
-      acceptedAmount: a.status === 'accepted' ? { value: a.amount.value, unit: a.amount.unit } : null,
+      amount: a.amount ? { value: a.amount.value, unit: a.amount.unit } : null,
+      acceptedAmount: a.status === 'accepted' && a.amount ? { value: a.amount.value, unit: a.amount.unit } : null,
       photos: a.photos.map((p) => ({
         id: String(p.fileId),
         kind: p.kind,
