@@ -272,6 +272,21 @@ Status: open (raised 2026-11-25 by package check) · Blocks: running more than o
 1.2.0 was rejected (peer ≤ NestJS 11). Option: a small custom store on `ioredis` (6.1.0, MIT) plus a Redis service
 (TLS per NFR-005) — not approved; needs owner decision and its own package check.
 
+### Q-F10 — Atlas tier and region for the demo cluster
+Status: open (raised 2026-11-25, demo environment decision) · Blocks: nothing in code (configuration); demo load claims · Owner: project owner
+Owner decided Atlas for the demo (plan §5.2) but not the tier or region. No approved requirement fixes data
+location. A free/shared tier caps connections (M0: 500) and throughput and has no backups, so the demo cluster
+cannot evidence NFR-022, NFR-027, NFR-034, NFR-035, NFR-036; those are verified on local/CI infrastructure.
+Options: (a) free tier, region nearest the UAE, accept the limits for the demo; (b) dedicated tier when load or
+backup evidence is required. Region choice also matters for personal data under NFR-031.
+
+### Q-F11 — Separate Atlas database users per service
+Status: open (raised 2026-11-25) · Blocks: least-privilege evidence for the demo (plan §5.2, §7); not code · Owner: project owner
+Recommended: one Atlas database user per service with `readWrite` on its own database only (`juthoor_activity`,
+`juthoor_verification`), no admin roles; each service receives only its own `MONGODB_URI`. The existing
+`backend/.env` has a single `MONGODB_URI` (contents not inspected); until T8 the transitional app uses it as-is.
+Owner to confirm creating the two users (Atlas UI) and splitting the URI into per-service env files at T9.
+
 ## D. Baseline technical debt (blocks strict CI)
 
 ### Q-D1 — Backend does not compile
