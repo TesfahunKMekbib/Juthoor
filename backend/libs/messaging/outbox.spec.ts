@@ -5,7 +5,7 @@ import { InMemoryOutboxStore, OutboxRelay, type OutboxStore } from './outbox.js'
 
 const env = (id: string): EventEnvelope =>
   createEnvelope('ActivitySubmitted', id, 'activity-service', {
-    userId: 'u1',
+    userId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
     activityTypeCode: 'tree',
     category: 'planting',
     submittedAt: '2026-01-01T00:00:00.000Z',

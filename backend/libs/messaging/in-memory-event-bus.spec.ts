@@ -5,7 +5,7 @@ import { InMemoryEventBus } from './in-memory-event-bus.js';
 
 const evt = (activityId: string) =>
   createEnvelope('ActivitySubmitted', activityId, 'activity-service', {
-    userId: 'u1',
+    userId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
     activityTypeCode: 'tree',
     category: 'planting',
     submittedAt: '2026-01-01T00:00:00.000Z',
@@ -115,5 +115,47 @@ describe('InMemoryEventBus', () => {
     await bus.publish(evt('a1'));
     await new Promise((r) => setImmediate(r));
     expect(done).toBe(true);
+  });
+
+  describe('envelope validation (NFR-004, NFR-007)', () => {
+    const bad = (): ReturnType<typeof evt> => ({
+      ...evt('a1'),
+      payload: { ...evt('a1').payload, emirate: 'Dubai' } as never,
+    });
+
+    it('rejects an invalid envelope on publish, before emitting, without echoing values', async () => {
+      const bus = new InMemoryEventBus();
+      const h = jest.fn();
+      bus.subscribe('ActivitySubmitted', h);
+      const err = await bus.publish(bad()).catch((e: Error) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect((err as Error).message).toContain('payload.emirate is not allowed');
+      expect((err as Error).message).not.toContain('Dubai');
+      expect(h).not.toHaveBeenCalled();
+    });
+
+    it('drops an envelope that arrives invalid at the consumer, logging eventId and reason only', () => {
+      const bus = new InMemoryEventBus();
+      const logged: string[] = [];
+      jest
+        .spyOn((bus as unknown as { logger: { error: (m: string) => void } }).logger, 'error')
+        .mockImplementation((m: string) => void logged.push(m));
+      const h = jest.fn();
+      bus.subscribe('ActivitySubmitted', h);
+      // Simulate a broker-style bypass of publish().
+      (bus as unknown as { emitter: { emit: (n: string, e: unknown) => void } }).emitter.emit(
+        'ActivitySubmitted',
+        bad(),
+      );
+      (bus as unknown as { emitter: { emit: (n: string, e: unknown) => void } }).emitter.emit(
+        'ActivitySubmitted',
+        undefined,
+      );
+      expect(h).not.toHaveBeenCalled();
+      expect(logged[0]).toContain('eventId=ActivitySubmitted:a1');
+      expect(logged[0]).toContain('payload.emirate is not allowed');
+      expect(logged[0]).not.toContain('Dubai');
+      expect(logged[1]).toContain('eventId=unknown');
+    });
   });
 });

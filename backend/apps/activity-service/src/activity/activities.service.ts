@@ -7,7 +7,7 @@ import {
   type ErrorDetail,
   ValidationFailedException,
 } from '../../../../libs/common/errors/validation-failed.exception.js';
-import { createEnvelope } from '../../../../libs/contracts/index.js';
+import { createEnvelope, type EventEnvelope } from '../../../../libs/contracts/index.js';
 import { EventBus } from '../../../../libs/messaging/index.js';
 import {
   EVIDENCE_SANITIZER,
@@ -151,7 +151,7 @@ export class ActivitiesService {
     // Published only after the activity is safely stored, outside the photo-cleanup block, so a
     // downstream failure can never leave a saved activity pointing at deleted photos (FR-015, FR-028).
     const submittedId = String(record._id);
-    void this.events.publish(
+    this.publishEvent(
       createEnvelope('ActivitySubmitted', submittedId, PRODUCER, {
         userId,
         activityTypeCode: type.code,
@@ -160,6 +160,13 @@ export class ActivitiesService {
       }),
     );
     return { created: true, activity: await this.toView(record, type) };
+  }
+
+  /** Fire-and-forget publish. A failure is logged by eventId only (no payload) and never reaches the caller. */
+  private publishEvent(envelope: EventEnvelope): void {
+    this.events.publish(envelope).catch(() => {
+      this.logger.error(`Event publish failed (eventId=${envelope.eventId})`);
+    });
   }
 
   private async sanitizeAll(files: PhotoToStore[], maxBytes: number): Promise<SanitizedEvidence[]> {
@@ -249,13 +256,13 @@ export class ActivitiesService {
     if (!record) return null;
     const id = String(record._id);
     const userId = String(record.userId);
-    void this.events.publish(
+    this.publishEvent(
       createEnvelope('ActivityDecided', id, PRODUCER, { userId, status: to, reasonCode, decidedAt: now.toISOString() }),
     );
     if (to === 'accepted') {
       const type = await this.types.findById(String(record.activityTypeId)).catch(() => undefined);
       if (type) {
-        void this.events.publish(
+        this.publishEvent(
           createEnvelope('ActivityAccepted', id, PRODUCER, {
             userId,
             activityTypeCode: type.code,

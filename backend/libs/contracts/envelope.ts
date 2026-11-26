@@ -35,6 +35,10 @@ export function createEnvelope<K extends EventType>(
   payload: EventPayloads[K],
   options: EnvelopeOptions = {},
 ): EventEnvelope<K> {
+  if (type === 'VerificationDeferred' && options.eventIdSuffix === undefined) {
+    // Each retry attempt is its own event; without the attempt in the eventId, retries would share one id.
+    throw new Error('VerificationDeferred requires eventIdSuffix (the attempt number)');
+  }
   const suffix = options.eventIdSuffix === undefined ? '' : `:${options.eventIdSuffix}`;
   return {
     eventId: `${type}:${activityId}${suffix}`,
@@ -47,18 +51,18 @@ export function createEnvelope<K extends EventType>(
   };
 }
 
-type FieldKind = 'string' | 'nullableString' | 'iso' | 'int' | 'status' | 'amount';
+type FieldKind = 'userId' | 'code' | 'nullableCode' | 'iso' | 'int' | 'status' | 'amount';
 
 /** Exact allow-list per type: an unknown key (e.g. emirate, description) is rejected (NFR-004, NFR-007). */
 const PAYLOAD_FIELDS: Record<EventType, Record<string, FieldKind>> = {
-  ActivitySubmitted: { userId: 'string', activityTypeCode: 'string', category: 'string', submittedAt: 'iso' },
-  VerificationDecided: { status: 'status', reasonCode: 'nullableString', decidedAt: 'iso' },
-  VerificationDeferred: { reasonCode: 'string', attempt: 'int' },
-  ActivityDecided: { userId: 'string', status: 'status', reasonCode: 'nullableString', decidedAt: 'iso' },
+  ActivitySubmitted: { userId: 'userId', activityTypeCode: 'code', category: 'code', submittedAt: 'iso' },
+  VerificationDecided: { status: 'status', reasonCode: 'nullableCode', decidedAt: 'iso' },
+  VerificationDeferred: { reasonCode: 'code', attempt: 'int' },
+  ActivityDecided: { userId: 'userId', status: 'status', reasonCode: 'nullableCode', decidedAt: 'iso' },
   ActivityAccepted: {
-    userId: 'string',
-    activityTypeCode: 'string',
-    category: 'string',
+    userId: 'userId',
+    activityTypeCode: 'code',
+    category: 'code',
     amount: 'amount',
     doneAt: 'iso',
   },
@@ -66,14 +70,20 @@ const PAYLOAD_FIELDS: Record<EventType, Record<string, FieldKind>> = {
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isNonEmpty = (v: unknown): v is string => typeof v === 'string' && v.length > 0;
+/** Real user ids are 24-hex ObjectIds; codes are short identifiers (seed codes, units, reason codes). */
+const USER_ID = /^[a-f0-9]{24}$/;
+const CODE = /^[a-z0-9_.-]{1,64}$/i;
+const isCode = (v: unknown): v is string => typeof v === 'string' && CODE.test(v);
 const isIso = (v: unknown): boolean => typeof v === 'string' && !Number.isNaN(Date.parse(v));
 
 function fieldOk(kind: FieldKind, v: unknown): boolean {
   switch (kind) {
-    case 'string':
-      return isNonEmpty(v);
-    case 'nullableString':
-      return v === null || isNonEmpty(v);
+    case 'userId':
+      return typeof v === 'string' && USER_ID.test(v);
+    case 'code':
+      return isCode(v);
+    case 'nullableCode':
+      return v === null || isCode(v);
     case 'iso':
       return isIso(v);
     case 'int':
@@ -86,7 +96,7 @@ function fieldOk(kind: FieldKind, v: unknown): boolean {
         Object.keys(v).length === 2 &&
         typeof v['value'] === 'number' &&
         Number.isFinite(v['value']) &&
-        isNonEmpty(v['unit'])
+        isCode(v['unit'])
       );
   }
 }
@@ -116,6 +126,13 @@ export function validateEnvelope(value: unknown): EnvelopeValidation {
     for (const [key, kind] of Object.entries(fields)) {
       if (!fieldOk(kind, payload[key])) errors.push(`payload.${key} is invalid`);
     }
+  }
+  if (
+    type === 'VerificationDeferred' &&
+    isRecord(payload) &&
+    value['eventId'] !== `VerificationDeferred:${String(value['activityId'])}:${String(payload['attempt'])}`
+  ) {
+    errors.push('eventId must end with the attempt for VerificationDeferred');
   }
   return errors.length > 0 ? { ok: false, errors } : { ok: true, envelope: value as unknown as EventEnvelope };
 }

@@ -562,7 +562,7 @@ describe('VerificationWorker', () => {
     jest.advanceTimersByTime(5000);
     void events.publish(
       createEnvelope('ActivitySubmitted', 'a0', 'activity-service', {
-        userId: 'u',
+        userId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
         activityTypeCode: 'T',
         category: 'c',
         submittedAt: '2026-01-01T00:00:00.000Z',
@@ -582,7 +582,7 @@ describe('VerificationWorker', () => {
     expect(service.sweep).toHaveBeenCalledTimes(2);
     void events.publish(
       createEnvelope('ActivitySubmitted', 'a1', 'activity-service', {
-        userId: 'u',
+        userId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
         activityTypeCode: 'T',
         category: 'c',
         submittedAt: '2026-01-01T00:00:00.000Z',
@@ -594,7 +594,7 @@ describe('VerificationWorker', () => {
     expect(service.sweep).toHaveBeenCalledTimes(2);
     void events.publish(
       createEnvelope('ActivitySubmitted', 'a2', 'activity-service', {
-        userId: 'u',
+        userId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
         activityTypeCode: 'T',
         category: 'c',
         submittedAt: '2026-01-01T00:00:00.000Z',

@@ -120,6 +120,22 @@ describe('ActivitiesService', () => {
       );
     });
 
+    it('a rejecting bus never fails the submit and the log carries only the eventId', async () => {
+      const { model, svc, publish } = setup();
+      publish.mockRejectedValue(new Error('secret-description'));
+      const logged: string[] = [];
+      jest
+        .spyOn((svc as unknown as { logger: { error: (m: string) => void } }).logger, 'error')
+        .mockImplementation((m: string) => void logged.push(m));
+      model.findOne.mockReturnValue(chain(null));
+      const rec = storedActivity();
+      model.create.mockResolvedValue({ toObject: () => rec });
+      const r = await svc.submit(userId, data(), [file], 'key-3');
+      expect(r.created).toBe(true);
+      await new Promise((res) => setImmediate(res));
+      expect(logged).toEqual([`Event publish failed (eventId=ActivitySubmitted:${String(rec._id)})`]);
+    });
+
     it('generates a submit key when none is given', async () => {
       const { model, svc } = setup();
       model.findOne.mockReturnValue(chain(null));

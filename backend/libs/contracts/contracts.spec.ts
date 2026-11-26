@@ -10,7 +10,7 @@ const good = () =>
     'a1',
     'activity-service',
     {
-      userId: 'u1',
+      userId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
       activityTypeCode: 'TREE_PLANTING',
       category: 'planting',
       amount: { value: 2, unit: 'trees' },
@@ -51,14 +51,29 @@ describe('validateEnvelope', () => {
   it('accepts a good envelope for every event type', () => {
     expect(validateEnvelope(good())).toEqual({ ok: true, envelope: good() });
     const samples: Record<EventType, unknown> = {
-      ActivitySubmitted: { userId: 'u', activityTypeCode: 'T', category: 'c', submittedAt: NOW.toISOString() },
+      ActivitySubmitted: {
+        userId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+        activityTypeCode: 'T',
+        category: 'c',
+        submittedAt: NOW.toISOString(),
+      },
       VerificationDecided: { status: 'rejected', reasonCode: null, decidedAt: NOW.toISOString() },
       VerificationDeferred: { reasonCode: 'r', attempt: 1 },
-      ActivityDecided: { userId: 'u', status: 'accepted', reasonCode: 'x', decidedAt: NOW.toISOString() },
+      ActivityDecided: {
+        userId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+        status: 'accepted',
+        reasonCode: 'x',
+        decidedAt: NOW.toISOString(),
+      },
       ActivityAccepted: good().payload,
     };
     for (const type of EVENT_TYPES) {
-      const env = { ...good(), type, eventId: `${type}:a1`, payload: samples[type] };
+      const env = {
+        ...good(),
+        type,
+        eventId: type === 'VerificationDeferred' ? `${type}:a1:1` : `${type}:a1`,
+        payload: samples[type],
+      };
       expect(validateEnvelope(env).ok).toBe(true);
     }
   });
@@ -119,7 +134,7 @@ describe('validateEnvelope', () => {
       ...good(),
       type: 'ActivitySubmitted',
       payload: {
-        userId: 'u',
+        userId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
         activityTypeCode: 'T',
         category: 'c',
         submittedAt: NOW.toISOString(),
@@ -152,6 +167,57 @@ describe('validateEnvelope', () => {
     expect(
       validateEnvelope({ ...good(), type: 'VerificationDeferred', payload: { reasonCode: 'r', attempt: 1.5 } }).ok,
     ).toBe(false);
+  });
+});
+
+describe('payload identifiers (hardening)', () => {
+  const withPayload = (patch: Record<string, unknown>) =>
+    validateEnvelope({ ...good(), payload: { ...good().payload, ...patch } });
+
+  it('requires a 24-hex userId', () => {
+    expect(withPayload({ userId: 'u1' }).ok).toBe(false);
+    expect(withPayload({ userId: 'A'.repeat(24) }).ok).toBe(false);
+    expect(withPayload({ userId: 'a1b2c3d4e5f6a1b2c3d4e5f6' }).ok).toBe(true);
+  });
+
+  it('limits codes, categories and units to short identifiers, and accepts the seeded ones', () => {
+    for (const ok of ['TREE_PLANTING', 'planting', 'kg', 'kWh', 'liters', 'verification.evidenceUnrelated']) {
+      expect(withPayload({ activityTypeCode: ok, category: ok, amount: { value: 1, unit: ok } }).ok).toBe(true);
+    }
+    for (const bad of ['has space', 'x'.repeat(65), 'a/b', '<script>', '']) {
+      expect(withPayload({ activityTypeCode: bad }).ok).toBe(false);
+      expect(withPayload({ category: bad }).ok).toBe(false);
+      expect(withPayload({ amount: { value: 1, unit: bad } }).ok).toBe(false);
+    }
+  });
+
+  it('limits reasonCode the same way', () => {
+    const base = {
+      eventId: 'VerificationDecided:a1',
+      type: 'VerificationDecided',
+      payload: { status: 'rejected', decidedAt: NOW.toISOString() },
+    };
+    expect(
+      validateEnvelope({ ...good(), ...base, payload: { ...base.payload, reasonCode: 'processing.retrying' } }).ok,
+    ).toBe(true);
+    expect(
+      validateEnvelope({ ...good(), ...base, payload: { ...base.payload, reasonCode: 'free text here' } }).ok,
+    ).toBe(false);
+  });
+});
+
+describe('VerificationDeferred eventId carries the attempt', () => {
+  const payload = { reasonCode: 'processing.retrying', attempt: 2 };
+  it('createEnvelope refuses to build one without eventIdSuffix', () => {
+    expect(() => createEnvelope('VerificationDeferred', 'a1', 'verification-service', payload)).toThrow(
+      /eventIdSuffix/,
+    );
+  });
+  it('validateEnvelope rejects an eventId that does not end with the attempt', () => {
+    const ok = createEnvelope('VerificationDeferred', 'a1', 'verification-service', payload, { eventIdSuffix: 2 });
+    expect(validateEnvelope(ok).ok).toBe(true);
+    const shared = validateEnvelope({ ...ok, eventId: 'VerificationDeferred:a1' });
+    expect(shared).toEqual({ ok: false, errors: ['eventId must end with the attempt for VerificationDeferred'] });
   });
 });
 
